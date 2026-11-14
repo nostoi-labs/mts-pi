@@ -93,6 +93,12 @@ You need a computer with an SD card reader (or a USB adapter for microSD cards).
 That is all. The Pi does not need your home Wi-Fi, a keyboard or a screen. To update, write a newer image the same
 way and pair again.
 
+**Optional: your country, home Wi-Fi and remote access.** After writing the card, your computer shows a small
+drive called `bootfs`. On it there is a text file, `mtspi.txt`. Open it with any text editor and fill in what you
+want: the two-letter code of your country (recommended), the name and password of your home Wi-Fi, and an SSH
+public key if you want to log in to the Pi from your computer. The Pi applies the file at every start and removes
+the Wi-Fi password from it once it has been used. Leave the file as it is if none of this means anything to you.
+
 > The ready-made image is built automatically from this repository by
 > [`image/build.sh`](image/build.sh): it is the official Raspberry Pi OS Lite with MTS Pi installed by the same
 > `install.sh` described below.
@@ -286,7 +292,7 @@ mtspi/            the program (Python)
   session.py        Wi-Fi Direct to the dashboard and session start-up
   dashboard.py      the Pi's home screen
 myspin/           phone side of the dashboard's screen link, binary only, non-commercial use
-system/           services, system configuration, helper scripts
+system/           services, system configuration, helper scripts, the optional settings file
 tests/            automatic tests of the open part
 docs/             pictures
 ```

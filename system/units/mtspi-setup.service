@@ -1,0 +1,13 @@
+[Unit]
+Description=MTS Pi: optional settings from the file mtspi.txt on the boot partition (Wi-Fi country, home Wi-Fi, SSH key)
+After=NetworkManager.service
+Wants=NetworkManager.service
+Before=mtspi-wifi-mode.service
+
+[Service]
+Type=oneshot
+ExecStart=@REPO@/system/setup-file.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

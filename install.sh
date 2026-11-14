@@ -181,7 +181,7 @@ for u in system/units/*.service; do
 done
 live && $SUDO systemctl daemon-reload
 $SUDO systemctl disable mtspi-p2p 2>/dev/null || true    # started and stopped by mtspi-wifi-mode
-$SUDO systemctl enable ofono mtspi-adapters mtspi-hfp mtspi-wifi-mode mtspi-btcentral mtspi-bridge
+$SUDO systemctl enable ofono mtspi-setup mtspi-adapters mtspi-hfp mtspi-wifi-mode mtspi-btcentral mtspi-bridge
 if live; then
     $SUDO rfkill unblock bluetooth   # Raspberry Pi OS leaves it blocked at first boot
     $SUDO systemctl restart bluetooth ofono
@@ -202,5 +202,9 @@ before connecting again.
 Next steps (pairing with the bike and with the iPhone): see README.md, section "Pairing".
 MSG
 else
+    # the ready-made card: its own host name, and the optional settings file on the boot partition
+    echo mts-pi > /etc/hostname
+    if grep -q '^127\.0\.1\.1' /etc/hosts; then sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tmts-pi/' /etc/hosts; else printf '127.0.1.1\tmts-pi\n' >> /etc/hosts; fi
+    [ -d /boot/firmware ] && cp system/mtspi.txt /boot/firmware/mtspi.txt
     say "done (image)"
 fi

@@ -1,0 +1,15 @@
+# MTS Pi - optional settings. You do NOT need this file to use MTS Pi.
+# Fill it in only if you want the Pi on your home Wi-Fi and reachable from your computer (to look inside,
+# read the logs, update it). Edit it with any text editor, save, put the card back in the Pi and power it.
+# The Pi reads it at every start. The Wi-Fi password is removed from this file once it has been applied.
+
+# Two-letter country code of where you are (IT, DE, FR, GB, US ...). Recommended in any case.
+WIFI_COUNTRY=
+
+# Your home Wi-Fi. Without the bike nearby, the Pi joins it about a minute after power-on.
+WIFI_NAME=
+WIFI_PASSWORD=
+
+# Your SSH public key (one line, starting with ssh-ed25519 or ssh-rsa). It turns on remote login as user
+# "mtspi", with administrator rights:  ssh mtspi@mts-pi.local
+SSH_KEY=

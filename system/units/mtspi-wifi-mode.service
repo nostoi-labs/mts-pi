@@ -1,6 +1,6 @@
 [Unit]
 Description=MTS Pi: Wi-Fi goes to the bike (Wi-Fi Direct) or to the home network (NetworkManager), automatically
-After=bluetooth.service NetworkManager.service ofono.service
+After=bluetooth.service NetworkManager.service ofono.service mtspi-setup.service
 Wants=bluetooth.service NetworkManager.service
 
 [Service]
