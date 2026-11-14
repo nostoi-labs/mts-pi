@@ -1,0 +1,2 @@
+# Carlinkit CPC200-CCPA (1314:1520 / 1314:1521): readable by the bridge (group plugdev) without root
+SUBSYSTEM=="usb", ATTR{idVendor}=="1314", ATTR{idProduct}=="152[01]", MODE="0660", GROUP="plugdev"

@@ -1,0 +1,13 @@
+[Unit]
+Description=MTS Pi: Wi-Fi goes to the bike (Wi-Fi Direct) or to the home network (NetworkManager), automatically
+After=bluetooth.service NetworkManager.service ofono.service
+Wants=bluetooth.service NetworkManager.service
+
+[Service]
+EnvironmentFile=-/etc/default/mtspi
+ExecStart=@REPO@/system/wifi-mode.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

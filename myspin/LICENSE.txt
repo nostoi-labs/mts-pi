@@ -1,0 +1,22 @@
+The files in this folder are distributed in binary form only.
+
+Copyright (c) 2026 Vinci. All rights reserved.
+
+You may use these files free of charge for personal, non-commercial purposes: on your own motorcycle, for
+study, in a hobby project. You may pass them on unmodified for the same purposes, together with this notice.
+
+You may not sell them, include them in a product or a service that is sold or otherwise paid for, or use them
+for any other commercial purpose.
+
+The source code of these files is not part of this repository. Everything else in the repository is under the
+MIT license (see LICENSE in the main folder) and can be used as you wish.
+
+THE FILES ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THEIR USE.
+
+They implement the phone side of the dashboard's screen-projection protocol and were written for
+interoperability with the motorcycle's dashboard. This project is not affiliated with or endorsed by
+Ducati or Robert Bosch GmbH.
+
+If you hold rights that you believe are affected by anything in this repository, please open an issue at
+https://github.com/nostoi-labs/mts-pi/issues: it will be looked at promptly.

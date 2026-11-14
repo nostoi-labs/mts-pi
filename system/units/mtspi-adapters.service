@@ -1,0 +1,12 @@
+[Unit]
+Description=MTS Pi: Bluetooth radio setup (name, class, visibility)
+After=bluetooth.service ofono.service
+Wants=bluetooth.service
+
+[Service]
+Type=oneshot
+ExecStart=@REPO@/system/adapters.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

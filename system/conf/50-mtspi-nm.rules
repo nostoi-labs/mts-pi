@@ -1,0 +1,6 @@
+// the bridge service runs as a normal user and must join the bike's Wi-Fi without a graphical session
+polkit.addRule(function (action, subject) {
+    if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 && subject.user === "@USER@") {
+        return polkit.Result.YES;
+    }
+});

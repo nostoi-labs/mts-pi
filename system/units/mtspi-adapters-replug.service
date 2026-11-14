@@ -1,0 +1,10 @@
+[Unit]
+Description=MTS Pi: Bluetooth radio came back, apply its setup again
+After=bluetooth.service
+
+[Service]
+Type=oneshot
+# at boot mtspi-adapters already does it: this one is only for radio resets on a running system
+ExecCondition=/bin/sh -c 'test $(cut -d. -f1 /proc/uptime) -gt 60'
+ExecStartPre=/bin/sleep 3
+ExecStart=@REPO@/system/adapters.sh --no-reconnect

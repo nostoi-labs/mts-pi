@@ -1,0 +1,3 @@
+# If a Bluetooth radio comes back after a reset (it reappears as a new hciN), apply name, class and visibility again.
+# DEVTYPE=host: radios only. Without it the rule also fired for every connection (hci0:12 ...).
+ACTION=="add", SUBSYSTEM=="bluetooth", ENV{DEVTYPE}=="host", KERNEL=="hci[0-9]*", TAG+="systemd", ENV{SYSTEMD_WANTS}+="mtspi-adapters-replug.service"

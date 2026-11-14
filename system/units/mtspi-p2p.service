@@ -1,0 +1,17 @@
+[Unit]
+Description=MTS Pi: dedicated wpa_supplicant for Wi-Fi Direct to the bike (outside NetworkManager)
+# Not enabled at boot: mtspi-wifi-mode (system/wifi-mode.sh) starts and stops it
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+# NetworkManager must not manage wlan0 while in bike mode: it adopted the freshly formed group and removed it
+ExecStartPre=-/usr/bin/nmcli device set wlan0 managed no
+# NetworkManager leaves the home Wi-Fi address and default route on wlan0: on the bike, traffic would go
+# into a Wi-Fi link that is no longer there
+ExecStartPre=-/usr/sbin/ip addr flush dev wlan0
+ExecStartPre=-/usr/sbin/ip route flush dev wlan0
+ExecStartPre=/bin/sleep 2
+ExecStart=/usr/sbin/wpa_supplicant -i wlan0 -D nl80211 -c /etc/wpa_supplicant/mtspi-p2p.conf
+Restart=always
+RestartSec=3

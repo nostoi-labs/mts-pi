@@ -1,0 +1,24 @@
+[Unit]
+Description=MTS Pi: the Pi is the phone (HFP AG) for the bike; separate high-priority process for call audio
+After=bluetooth.service ofono.service user@@UID@.service
+Wants=user@@UID@.service
+PartOf=bluetooth.service
+
+[Service]
+User=@USER@
+Environment=XDG_RUNTIME_DIR=/run/user/@UID@
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/@UID@/bus
+EnvironmentFile=-/etc/default/mtspi
+# runs only with HFP_AG=1; with HFP_AG=0 the Pi does not offer itself to the bike as a phone.
+# In the pro variant (RADIO=esp32phone|pro) the phone role belongs to the external radio.
+ExecCondition=/bin/sh -c '. /etc/default/mtspi 2>/dev/null; [ "${HFP_AG:-0}" = 1 ] && [ "${RADIO:-internal}" != esp32phone ] && [ "${RADIO:-internal}" != pro ]'
+WorkingDirectory=@REPO@
+ExecStart=@REPO@/.venv/bin/python -m mtspi.hfp_ag
+# SCO voice must not wait for the video frame encoding of the bridge (bursts lead to a radio "hardware error")
+CPUSchedulingPolicy=rr
+CPUSchedulingPriority=20
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

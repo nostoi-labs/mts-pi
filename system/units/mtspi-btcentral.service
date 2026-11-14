@@ -1,0 +1,12 @@
+[Unit]
+Description=MTS Pi: keep the Pi central on every Bluetooth link (one radio, one piconet)
+After=bluetooth.service mtspi-adapters.service
+Wants=bluetooth.service
+
+[Service]
+ExecStart=@REPO@/system/bt-central.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
