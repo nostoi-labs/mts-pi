@@ -68,6 +68,7 @@ Two things make this possible on such a small board:
 | Raspberry Pi **3 Model A+** | The only board tested. Small, low power, hardware H.264 decoding, 2.4/5 GHz Wi-Fi and Bluetooth on one chip. Add a small heatsink. |
 | Carlinkit **CPC200-CCPA** | The "wireless CarPlay for Android head units" dongle (it shows up as *AutoKit*). **Not** the "wired to wireless" adapters such as the 2air: those need a car that already has CarPlay. Ours: USB ID 1314:1520, firmware 2025.10.15. Do not update the firmware if it works. |
 | microSD card | 8 GB is enough for space (the installed system takes about 3 GB). In practice: a 32 GB **Class 10** card (A1 if you can), from about 13 € for a budget brand to about 23 € for SanDisk or Samsung at late-2026 prices. Our bench tests ran on a SanDisk Ultra 32 GB (Class 10, A1). Avoid old Class 4 cards: we tried one, writing the image took about 20 minutes instead of 3. A "high endurance" card is not needed: the Pi writes very little. |
+| Case | Optional. We printed this one: [Ultra-slim snap-fit case for Raspberry Pi 3 A+](https://makerworld.com/en/models/2547063-ultra-slim-snap-fit-case-for-raspberry-pi-3a-plus) on MakerWorld. Plastic is the safe choice: a closed metal case can weaken Wi-Fi and Bluetooth, which all go through the antenna on the board, and we have not tested one. |
 | 5 V power | Measured **0.54–0.89 A at 5 V** with the dongle. Use a supply that gives 2 A or more: a weak one causes under-voltage and random faults. |
 | iPhone | Any iPhone with CarPlay. |
 
