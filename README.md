@@ -351,6 +351,8 @@ Logs: `journalctl -u mtspi-bridge -u mtspi-hfp -u mtspi-wifi-mode`, plus one fol
 - If the iPhone is still in the bike's list of devices, at key-on the bike may connect to it instead of the Pi:
   disconnect it in the bike's Bluetooth menu (see [Pairing](#pairing)).
 - Siri does not hear the helmet microphone yet.
+- In CarPlay's long lists (the contacts in Phone, for example) one move of the joystick jumps over many rows
+  instead of going to the next one. Everywhere else it moves one step at a time. We do not know why yet.
 - The joystick has no Back key and its centre press cannot be held (the dashboard does not pass that on): Back is
   the joystick held up. Leaving Ducati Connect with the joystick held left also takes CarPlay one step back.
 - The socket in the tank compartment stays on for a few seconds after key-off and then cuts the power: the Pi is
@@ -362,18 +364,20 @@ Logs: `journalctl -u mtspi-bridge -u mtspi-hfp -u mtspi-wifi-mode`, plus one fol
 
 ## Roadmap
 
-What is planned for the next releases, roughly in this order.
+What is planned for the next releases, roughly in this order: first what the evening on the bike showed to be
+wrong or missing, then the rest.
 
 | | What | Why |
 |---|---|---|
 | 1 | **Steady on the bike**: find why the link to the dashboard dropped once, come back from a drop in seconds without the key, keep the bike from picking the iPhone at key-on | the first evening on the bike worked, with one drop |
-| 2 | **Status light**: the Pi's LED tells you when it is ready to pair and when something is wrong | the ready-made card has no screen to look at |
-| 3 | **SD card protection**: a read-only system | the bike cuts the power without warning |
-| 4 | **Leaner system**: everything the Pi does not need is turned off | faster start, less power, less heat |
-| 5 | **Siri** with the helmet microphone, started from the joystick held down | hands stay on the bars |
-| 6 | **Updates** without writing the card again | no new pairing at every update |
-| 7 | **Automatic recovery** after a Bluetooth radio error | today it takes key off and on |
-| 8 | Text messages in the bike's menu, the name under the CarPlay icon, finer joystick moves in the app grid | details |
+| 2 | **Joystick in lists**: one row at a time in CarPlay's long lists (contacts, recent calls) | today one move jumps over many rows |
+| 3 | **Siri** with the helmet microphone, started by holding the joystick down (holding it up is already Back) | hands stay on the bars |
+| 4 | **Status light**: the Pi's LED tells you when it is ready to pair and when something is wrong | the ready-made card has no screen to look at |
+| 5 | **SD card protection**: a read-only system | the bike cuts the power without warning |
+| 6 | **Leaner system**: everything the Pi does not need is turned off | faster start, less power, less heat |
+| 7 | **Updates** without writing the card again | no new pairing at every update |
+| 8 | **Automatic recovery** after a Bluetooth radio error | today it takes key off and on |
+| 9 | Incoming calls and the caller's name checked on the bike, text messages in the bike's menu, the name under the CarPlay icon, finer joystick moves in the app grid, the card's time zone (today the logs are on London time) | details |
 
 Later: the "pro" variant with a second radio, and tyre pressure and temperature from Bluetooth valve sensors on
 the home screen.
