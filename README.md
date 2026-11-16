@@ -22,11 +22,12 @@ the bike (14 s, no sound).*
 What you get on the bike:
 
 - **CarPlay on the dashboard**, drawn at the dashboard's own size and driven with the handlebar joystick: Maps,
-  Waze, Google Maps, music, podcasts, messages;
+  Waze, Google Maps, music, podcasts;
 - **music and navigation voice in the helmet**, through the bike's own Bluetooth link to the intercom;
 - **phone calls**: ring with the caller's name, answer and hang up from the bike or the helmet button, voice
   both ways;
-- the bike's own **Music** and **Phone** menus keep working: track title and play/pause/skip, phonebook, recent calls;
+- the bike's own **Music** and **Phone** menus keep working: track title and play/pause/skip, recent calls with
+  their names;
 - a small **home screen** of the Pi inside Ducati Connect: start and stop CarPlay, see what is connected, settings.
 
 ![The Pi's home screen](docs/home-screen.png)
@@ -34,8 +35,8 @@ What you get on the bike:
 *The Pi's home screen, drawn by the code at 848×304: the area the dashboard gives to Ducati Connect.*
 
 > **Status: beta, tried on the bike.** On 16 Nov 2026, on a Multistrada V4 S with the ready-made card: pairing
-> from scratch, CarPlay on the dashboard while riding, joystick, music with the titles in the bike's menu, a call
-> placed from CarPlay and closed from the bike, power from the USB socket in the tank compartment. Still open
+> from scratch, CarPlay on the dashboard while riding, joystick, music with the titles in the bike's menu, recent
+> calls with their names in the bike's Phone menu, a call placed from CarPlay and closed from the bike, power from the USB socket in the tank compartment. Still open
 > after that evening: once the dashboard dropped off the air for half a minute and CarPlay came back only after
 > key off and on (the part that was our fault is fixed, not yet tried on the bike again); incoming calls have
 > been tried on the bench only; Siri does not hear the helmet microphone (see [Known limits](#known-limits)).
@@ -248,10 +249,10 @@ you leave Ducati Connect, and picture quality (three steps: higher quality means
 | Incoming calls, answer from the bike or the helmet | bench | the same path; the bike rings through HFP |
 | Caller's name | bench | number from the iPhone's HFP link, name from the phonebook kept on the SD card |
 | The bike's Music menu | **bike** | track title from the dongle → AVRCP; the bike's buttons → CarPlay play/pause/skip |
-| Phonebook in the bike's Phone menu | bench | PBAP from the iPhone to the Pi, then from the Pi to the bike. On the bike the dashboard downloaded the whole phonebook; we did not open the menu to look. |
+| Recent calls with names in the bike's Phone menu | **bike** | PBAP from the iPhone to the Pi, then from the Pi to the bike: the dashboard downloads the phonebook and the call lists. The Multistrada shows the recent calls; it has no screen for browsing contacts. |
 | Battery and signal on the home screen | bench | the iPhone's HFP indicators |
 | The Pi's home screen in Ducati Connect, joystick | **bike** | first tried on the Multistrada on 24 Oct 2026 |
-| Text messages on the bike | not yet | |
+| Text messages on the bike | not applicable | the Multistrada's dashboard has no function for messages |
 | Siri | not yet | on the bike Siri started but did not hear the helmet microphone |
 
 "Bike" means: tried on the Multistrada V4 S on 16 Nov 2026, with the ready-made card. "Bench" means: real Pi,
@@ -390,7 +391,7 @@ wrong or missing, then the rest.
 | 6 | **Leaner system**: everything the Pi does not need is turned off | faster start, less power, less heat |
 | 7 | **Updates** without writing the card again | no new pairing at every update |
 | 8 | **Automatic recovery** after a Bluetooth radio error | today it takes key off and on |
-| 9 | Incoming calls and the caller's name checked on the bike, text messages in the bike's menu, the name under the CarPlay icon, finer joystick moves in the app grid, the card's time zone (today the logs are on London time) | details |
+| 9 | Incoming calls and the caller's name checked on the bike, the name under the CarPlay icon, finer joystick moves in the app grid, the card's time zone (today the logs are on London time) | details |
 
 Later: the "pro" variant with a second radio, and tyre pressure and temperature from Bluetooth valve sensors on
 the home screen.
