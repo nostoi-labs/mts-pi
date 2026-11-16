@@ -20,6 +20,7 @@ import time
 from dbus_fast import BusType, Message, MessageType, Variant
 from dbus_fast.aio import MessageBus
 from dbus_fast.service import ServiceInterface, method
+from mtspi.tasks import spawn
 
 MYSPIN_UUID = "31fd954e-8138-4367-a201-0276b9716fb1"
 # profiles that tell the two sides apart
@@ -117,7 +118,7 @@ class _Agent(ServiceInterface):
         self.bus, self.log = bus, log
 
     def _trust(self, device):
-        asyncio.ensure_future(call(self.bus, "org.bluez", device, "org.freedesktop.DBus.Properties", "Set",
+        spawn(call(self.bus, "org.bluez", device, "org.freedesktop.DBus.Properties", "Set",
                                    "ssv", ["org.bluez.Device1", "Trusted", Variant("b", True)]))
 
     @method()

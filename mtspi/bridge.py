@@ -41,6 +41,7 @@ from mtspi.i18n import t  # noqa: E402
 from mtspi.settings import Settings  # noqa: E402
 from myspin.phone import PhoneControl, PhoneProjection, discover_vehicle  # noqa: E402
 from PIL import Image, ImageDraw  # noqa: E402
+from mtspi.tasks import spawn
 
 
 def oem_icon_png(label: str, path: str = "") -> bytes:
@@ -195,7 +196,7 @@ class Bridge:
 
     # ------------------------------------------------------------ utilities
     def spawn(self, coro):
-        return asyncio.ensure_future(coro)
+        return spawn(coro)               # kept alive until it ends (see mtspi/tasks.py)
 
     def to_phone_bt(self, msg):
         if self.iphone:
@@ -1101,7 +1102,7 @@ class Bridge:
             while True:
                 r, w = await bike.pbap_accept()
                 self.log("pbap_connected", peer="esp32")
-                asyncio.ensure_future(pbap.ObexPbapServer(self.phonebook, self.log, "esp32").serve(r, w))
+                spawn(pbap.ObexPbapServer(self.phonebook, self.log, "esp32").serve(r, w))
         if self.a.pbap.startswith("tcp:"):
             await pbap.serve_tcp(self.phonebook, self.log, int(self.a.pbap[4:]))
             await asyncio.Event().wait()

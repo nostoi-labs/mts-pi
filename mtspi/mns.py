@@ -16,6 +16,7 @@ from dbus_fast import BusType, Variant
 from dbus_fast.aio import MessageBus
 
 from mtspi.bluez import RfcommServer, _v, call, system_bus
+from mtspi.tasks import spawn
 
 MNS_UUID = "00001133-0000-1000-8000-00805f9b34fb"
 MNS_TARGET = bytes.fromhex("bb582b41420c11dbb0de0800200c9a66")
@@ -64,10 +65,10 @@ async def serve_mns(log, on_event):
         log("mns_connected", peer=device.rsplit("/", 1)[-1], l2cap=sock.type == socket.SOCK_SEQPACKET)
         if sock.type == socket.SOCK_SEQPACKET:
             # the iPhone uses OBEX over L2CAP (GoepL2capPsm in BlueZ's record): one OBEX packet per read
-            asyncio.ensure_future(_session(_SeqReader(sock), _SeqWriter(sock), log, on_event))
+            spawn(_session(_SeqReader(sock), _SeqWriter(sock), log, on_event))
         else:
             r, w = await asyncio.open_connection(sock=sock)
-            asyncio.ensure_future(_session(r, w, log, on_event))
+            spawn(_session(r, w, log, on_event))
 
 
 class _SeqReader:

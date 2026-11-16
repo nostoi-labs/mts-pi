@@ -21,9 +21,10 @@ What you get on the bike:
 > **Status: beta, tried on the bike.** On 16 Nov 2026, on a Multistrada V4 S with the ready-made card: pairing
 > from scratch, CarPlay on the dashboard while riding, joystick, music with the titles in the bike's menu, a call
 > answered and closed from the bike, power from the USB socket in the tank compartment. Still open after that
-> evening: once the link to the dashboard dropped and came back only after key off and on, and Siri does not hear
-> the helmet microphone (see [Known limits](#known-limits)). `install.sh` on a blank system has not been run on a
-> real Pi yet. This page is updated as things are tried.
+> evening: once the dashboard dropped off the air for half a minute and CarPlay came back only after key off and
+> on (the part that was our fault is fixed, not yet tried on the bike again), and Siri does not hear the helmet
+> microphone (see [Known limits](#known-limits)). `install.sh` on a blank system has not been run on a real Pi
+> yet. This page is updated as things are tried.
 
 > **Unofficial project, at your own risk.** MTS Pi is a hobby project, not a product. It is not affiliated with,
 > endorsed by or supported by Ducati, Apple, Bosch, Carlinkit or Raspberry Pi. Set things up with the bike standing
@@ -242,6 +243,14 @@ Notes for anyone building something similar. Each of these cost an evening or mo
   line written a few seconds earlier came back as zero bytes, the system then ignored the whole settings file, and
   the bridge started without the dongle (red light, no CarPlay). Settings are now written aside, swapped in and
   flushed to the card.
+- **A task nobody holds can vanish.** Python's event loop keeps only weak references to its tasks. The task that
+  served the dashboard's control channel was started and forgotten; a quarter of an hour into the first ride the
+  garbage collector removed it ("Task was destroyed but it is pending!"), nothing looked wrong, and when the
+  dashboard reopened the channel after a radio dropout nobody answered. Every background task is now kept in a
+  set until it ends.
+- **The real joystick is not the emulated one.** Left, right and centre arrive as clicks only; up and down arrive
+  as press, long press after about 0.9 s, and release; holding left belongs to the bike, and a held centre press
+  never arrives. Back, which the emulated dashboard had as a key, became "hold up".
 - **A card you cannot reach can still tell you what happened.** The small `bootfs` partition is readable from any
   computer: a script started from `cmdline.txt` copied the logs there, and that is how the two problems above
   were found without a screen, a keyboard or a network.
@@ -273,9 +282,11 @@ Logs: `journalctl -u mtspi-bridge -u mtspi-hfp -u mtspi-wifi-mode`, plus one fol
 - After a Bluetooth radio error the Pi needs a restart and the dongle must be powered again: on the bike, key off
   and on.
 - Once, music stuttered for about a minute after an incoming call.
-- On the bike, once in one evening, the dashboard lost the Pi on Wi-Fi and Bluetooth together at the end of a
-  ride. Music came back by itself after half a minute, CarPlay only after key off and on. We do not know the cause
-  yet.
+- On the bike, once in one evening, the dashboard went silent on Wi-Fi and Bluetooth together for about half a
+  minute at the end of a ride, while the Pi's link to the iPhone stayed up. We do not know why. Music came back
+  by itself; CarPlay came back only after key off and on, because of a defect of ours that is now fixed (see
+  [Things we learned](#things-we-learned)). Coming back by itself after such a drop has not been tried on the
+  bike yet.
 - Siri does not hear the helmet microphone yet.
 - The joystick has no Back key and its centre press cannot be held (the dashboard does not pass that on): Back is
   the joystick held up.

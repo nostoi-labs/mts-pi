@@ -20,6 +20,7 @@ import os
 import re
 import struct
 from typing import Optional
+from mtspi.tasks import spawn
 
 PBAP_PSE_UUID = "0000112f-0000-1000-8000-00805f9b34fb"
 PBAP_TARGET = bytes.fromhex("796135f0f0c511d809660800200c9a66")
@@ -468,7 +469,7 @@ async def serve_bluez(book: Phonebook, log) -> None:
     while True:
         device, reader, writer = await server.accept_device()
         peer = device.rsplit("/", 1)[-1].replace("dev_", "").replace("_", ":")
-        asyncio.ensure_future(ObexPbapServer(book, log, peer).serve(reader, writer))
+        spawn(ObexPbapServer(book, log, peer).serve(reader, writer))
 
 
 async def serve_tcp(book: Phonebook, log, port: int, host: str = "127.0.0.1"):

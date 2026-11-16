@@ -13,6 +13,7 @@ Linux only (dbus-fast); the data conversion (player_state, mpris_metadata) is pu
 
 import asyncio
 from typing import Optional
+from mtspi.tasks import spawn
 
 PLAYER_PATH = "/ducati/player"
 STATUS = {"playing": "Playing", "paused": "Paused", "stopped": "Stopped",
@@ -162,7 +163,7 @@ class AvrcpBridge:
     def command(self, name: str) -> None:
         if self.source:
             self.log("music_command", command=name, to="iphone")
-            asyncio.ensure_future(self._send(name))
+            spawn(self._send(name))
         elif self.on_command and self.on_command(name):
             self.log("music_command", command=name, to="carplay")
         else:

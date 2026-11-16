@@ -34,6 +34,7 @@ from mtspi import linkproto as lp
 from dbus_fast.service import ServiceInterface, method
 
 from mtspi.bluez import UUID_HFP_AG, _v, call, system_bus
+from mtspi.tasks import spawn
 
 PATH = "/ducati/hfp_ag"
 SOL_SCO, SCO_OPTIONS = 17, 1
@@ -248,7 +249,7 @@ class BridgeState:
         if self.link and self.loop:
             s = struct.unpack(f"<{len(data8k) // 2}h", data8k)
             up = struct.pack(f"<{len(s) * 2}h", *[v for x in s for v in (x, x)])
-            self.loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self.link.send(lp.MIC, up)))
+            self.loop.call_soon_threadsafe(lambda: spawn(self.link.send(lp.MIC, up)))
 
     def _bike_sink(self):
         macs = [mac_of(d).replace(":", "_") for d in self.ag.links]
@@ -582,7 +583,7 @@ class HfpAg:
         sock.setblocking(False)
         link = Link(self, device, sock)
         self.links[device] = link
-        asyncio.ensure_future(link.run())
+        spawn(link.run())
 
     async def run(self):
         self.bus = await system_bus()
