@@ -84,6 +84,7 @@ say "data folder, groups, the two commands the bridge runs as root"
 $SUDO mkdir -p /var/lib/mtspi
 $SUDO chown "$U:$U" /var/lib/mtspi
 $SUDO usermod -aG plugdev,netdev,bluetooth,audio "$U"
+getent group video >/dev/null && $SUDO usermod -aG video "$U"    # vcgencmd (temperature, under-voltage)
 # the bridge removes a stale Wi-Fi Direct interface (iw) and asks the bike for an address (dhcpcd)
 echo "$U ALL=(root) NOPASSWD: /usr/sbin/iw, /usr/sbin/dhcpcd" | $SUDO tee /etc/sudoers.d/mtspi >/dev/null
 $SUDO chmod 440 /etc/sudoers.d/mtspi
@@ -206,5 +207,9 @@ else
     echo mts-pi > /etc/hostname
     if grep -q '^127\.0\.1\.1' /etc/hosts; then sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tmts-pi/' /etc/hosts; else printf '127.0.1.1\tmts-pi\n' >> /etc/hosts; fi
     [ -d /boot/firmware ] && cp system/mtspi.txt /boot/firmware/mtspi.txt
+    # Raspberry Pi OS waits for a "create your user" step that never comes here (the service user already exists,
+    # the stock user stays locked) and shows a warning about it at every SSH login
+    systemctl disable userconfig.service >/dev/null 2>&1 || true
+    rm -f /etc/ssh/sshd_config.d/rename_user.conf
     say "done (image)"
 fi

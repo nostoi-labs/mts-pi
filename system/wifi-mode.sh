@@ -77,7 +77,8 @@ home_visible() {   # in bike mode the scan is done by our own wpa_supplicant
 to_bike() {
     log "bike mode"
     echo bike >$STATE
-    rfkill unblock wlan 2>/dev/null || true   # a fresh system keeps Wi-Fi blocked until a country is set
+    rfkill unblock wlan 2>/dev/null || true   # a fresh system keeps Wi-Fi blocked until a country is set...
+    nmcli radio wifi on 2>/dev/null || true   # ...and switched off inside NetworkManager, which would block it again
     systemctl start mtspi-p2p     # its ExecStartPre takes wlan0 away from NetworkManager
 }
 
@@ -87,6 +88,7 @@ to_home() {
     systemctl stop mtspi-p2p
     local i
     for i in $(ls /sys/class/net | grep '^p2p-wlan0-'); do iw dev "$i" del 2>/dev/null; done
+    nmcli radio wifi on 2>/dev/null || true    # switched off in NetworkManager on a fresh system
     nmcli device set wlan0 managed yes
 }
 

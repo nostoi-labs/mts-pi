@@ -48,4 +48,13 @@ printf 'WIFI_COUNTRY=Italy\nSSH_KEY=hello\n' > "$T/mtspi.txt"; : > "$T/calls"; :
 run
 check "bad country ignored" '! grep -q WIFI_COUNTRY "$T/defaults"'
 check "bad key ignored" '! grep -q "enable --now ssh" "$T/calls"'
+
+# 6. settings damaged by an abrupt restart (zero bytes before the line, as seen on the first real start of a card)
+#    and Wi-Fi switched off inside NetworkManager
+printf 'CARLINKIT=usb\n\000\000\000\000WIFI_COUNTRY=IT\nWIFI_COUNTRY=IT\n' > "$T/defaults"
+printf 'WIFI_COUNTRY=IT\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "damaged settings: zero bytes removed" '[ "$(tr -d "\000" < "$T/defaults" | wc -c)" = "$(wc -c < "$T/defaults")" ]'
+check "damaged settings: one country line, other settings kept" '[ "$(grep -c WIFI_COUNTRY "$T/defaults")" = 1 ] && grep -qx "CARLINKIT=usb" "$T/defaults"'
+check "Wi-Fi switched on in NetworkManager" 'grep -q "^nmcli radio wifi on" "$T/calls"'
 [ "$fail" = 0 ] && echo "ALL OK" || { echo "SOME FAILED"; cat "$T/out"; exit 1; }

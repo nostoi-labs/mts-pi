@@ -11,6 +11,18 @@ P2P=${MTSPI_P2P_CONF:-/etc/wpa_supplicant/mtspi-p2p.conf}
 SUDOERS=${MTSPI_SUDOERS:-/etc/sudoers.d/mtspi-remote}
 log() { echo "setup file: $*"; }
 
+# put FILE KEY LINE: FILE keeps a single line for KEY (the new LINE). The file is rebuilt aside and swapped in,
+# then flushed to the card: the first start of a fresh card restarts the Pi abruptly, and a plain append left
+# zero bytes in the settings (which made systemd ignore the whole file, so the bridge ran without the Carlinkit).
+put() {
+    local f=$1 tmp
+    tmp=$(mktemp "$f.XXXXXX") || return 1
+    { [ -f "$f" ] && tr -d '\000' < "$f" | grep -v "^[[:space:]]*$2"; echo "$3"; } > "$tmp"
+    if [ -f "$f" ]; then chmod --reference="$f" "$tmp" 2>/dev/null; chown --reference="$f" "$tmp" 2>/dev/null; else chmod 644 "$tmp"; fi
+    mv "$tmp" "$f"
+    sync
+}
+
 COUNTRY=""; SSID=""; PSK=""; KEY=""
 if [ -f "$FILE" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
@@ -33,8 +45,8 @@ fi
 if [ -n "$COUNTRY" ]; then
     case "$COUNTRY" in
         [A-Z][A-Z])
-            touch "$DEF"; sed -i '/^WIFI_COUNTRY=/d' "$DEF"; echo "WIFI_COUNTRY=$COUNTRY" >> "$DEF"
-            if [ -f "$P2P" ]; then sed -i '/^country=/d' "$P2P"; echo "country=$COUNTRY" >> "$P2P"; fi
+            put "$DEF" 'WIFI_COUNTRY=' "WIFI_COUNTRY=$COUNTRY"
+            [ -f "$P2P" ] && put "$P2P" 'country=' "country=$COUNTRY"
             log "Wi-Fi country $COUNTRY" ;;
         *) log "WIFI_COUNTRY must be two letters, ignored: $COUNTRY"; COUNTRY="" ;;
     esac
@@ -43,6 +55,9 @@ fi
 if [ -n "$COUNTRY" ]; then
     iw reg set "$COUNTRY" 2>/dev/null || true
     rfkill unblock wlan 2>/dev/null || true
+    # a fresh Raspberry Pi OS also keeps Wi-Fi switched off inside NetworkManager until a country is chosen:
+    # without this the home network is saved but never joined
+    nmcli radio wifi on >/dev/null 2>&1 || true
 fi
 
 # home Wi-Fi: saved as a NetworkManager network; the Wi-Fi mode service goes back to it when the bike is away
@@ -51,6 +66,7 @@ if [ -n "$SSID" ] && [ -n "$PSK" ]; then
     if nmcli connection add type wifi con-name mtspi-home ifname wlan0 ssid "$SSID" \
             wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$PSK" connection.autoconnect yes >/dev/null 2>&1; then
         sed -i 's/^\([[:space:]]*WIFI_PASSWORD[[:space:]]*=\).*/\1/' "$FILE"      # the password does not stay on the card in clear
+        sync
         log "home Wi-Fi \"$SSID\" saved, password removed from the file"
     else
         log "could not save the home Wi-Fi \"$SSID\""
@@ -69,6 +85,7 @@ if [ -n "$KEY" ]; then
                 chown "$U:$U" "$H/.ssh/authorized_keys"; chmod 600 "$H/.ssh/authorized_keys"
                 echo "$U ALL=(ALL) NOPASSWD: ALL" > "$SUDOERS"; chmod 440 "$SUDOERS"
                 systemctl enable --now ssh >/dev/null 2>&1 || systemctl enable --now sshd >/dev/null 2>&1 || true
+                sync
                 log "remote login enabled for $U"
             fi ;;
         *) log "SSH_KEY does not look like a public key, ignored" ;;
