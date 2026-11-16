@@ -108,6 +108,14 @@ class Display:
         if action not in ("PRESS", "CLICK", "LONG_PRESS"):
             return
         if self.mode == "carplay":
+            # On the bike (16 Nov 2026) the joystick has no Back key: a long LEFT is the dashboard's own "leave Ducati
+            # Connect", a long centre press never reaches us, LEFT/RIGHT/OK arrive only as clicks. UP and DOWN are the
+            # only keys with a hold: PRESS, then LONG_PRESS after about 0.9 s, then RELEASE. So: UP held = Back.
+            # Any other LONG_PRESS is dropped (it used to repeat the key a second time).
+            if action == "LONG_PRESS":
+                if key == "UP":
+                    self.b.carplay_key("BACK")
+                return
             self.b.carplay_key(key)
         else:
             self.b.launcher.on_key(key)
@@ -858,8 +866,16 @@ class Bridge:
     async def control_loop(self):
         """Control channel always listening: the bike reopens it at every ignition (dashboard power-on) or after a radio
         dropout (previously it was negotiated only once and then the Pi stayed deaf until a restart)."""
+        async def until_closed(r):
+            while await r.read(4096):              # stays open as long as the bike keeps it open
+                pass
+
+        waiting = None                             # pending wait for the bike's next control connection
         while True:
-            r, w = await hv.control_channel(self.a.control, self.log)
+            if waiting is None:
+                waiting = asyncio.ensure_future(hv.control_channel(self.a.control, self.log))
+            r, w = await waiting
+            waiting = None
             try:
                 control = PhoneControl(r, w, self.log, device_name=self.a.bt_name)
                 creds = await control.negotiate()
@@ -867,9 +883,27 @@ class Bridge:
                     hv.save_credentials(self.a.ap_credentials_file, creds, self.log)
                 await hv.join_wifi(self.a.wifi, creds, self.log)
                 await control.notify_wlan("CONNECTED")
-                while await r.read(4096):          # stays open as long as the bike keeps it open
-                    pass
-                self.log("control_closed")
+                if self.a.control == "rfcomm":
+                    # On the bike (16 Nov 2026): after a radio dropout the dashboard opened the channel again, but the
+                    # old one never reported its end and the Pi stayed deaf until a restart. A new connection now
+                    # replaces the old one.
+                    closed = asyncio.ensure_future(until_closed(r))
+                    waiting = asyncio.ensure_future(hv.control_channel(self.a.control, self.log))
+                    try:
+                        await asyncio.wait({closed, waiting}, return_when=asyncio.FIRST_COMPLETED)
+                    finally:
+                        if not closed.done():
+                            closed.cancel()
+                    if waiting.done():
+                        if closed.done() and not closed.cancelled():
+                            closed.exception()     # the old channel's own end no longer matters
+                        self.log("control_replaced")
+                    else:
+                        closed.result()            # raises here if the old channel ended with an error
+                        self.log("control_closed")
+                else:
+                    await until_closed(r)
+                    self.log("control_closed")
             except (Exception, asyncio.TimeoutError) as e:
                 # a half-finished negotiation (dashboard off or gone) must not stop the Pi: wait again
                 self.log("control_error", error=f"{type(e).__name__}: {e}")

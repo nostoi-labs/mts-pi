@@ -88,7 +88,7 @@ async def join_p2p(creds: dict, log) -> None:
             break
         await asyncio.sleep(1)
     iface, has_ip = await loop.run_in_executor(None, group_iface)
-    if iface and has_ip:
+    if iface and has_ip and "wpa_state=COMPLETED" in (await loop.run_in_executor(None, lambda: cli("status", iface=iface))):
         log("p2p_already_joined", iface=iface, peer=name)
         return
     if iface:                                   # stale group without IP: remove it, interface included (only one is allowed)
@@ -113,6 +113,17 @@ async def join_p2p(creds: dict, log) -> None:
         if addr:
             break
         log("p2p_peer_not_found", attempt=attempt, peer=name)
+    if addr and not is_go:
+        # On the bike (16 Nov 2026), right after the dashboard says its Wi-Fi is ready, it can show up for a few seconds
+        # without its group: a negotiation started then never completes (40 s lost). The V4 S always owns the group,
+        # so wait for it to appear before falling back to a negotiation.
+        deadline = time.monotonic() + 12
+        while not is_go and time.monotonic() < deadline:
+            await asyncio.sleep(1.5)
+            info = await loop.run_in_executor(None, lambda: cli("p2p_peer", addr))
+            caps = dict(x.split("=", 1) for x in info.splitlines() if "=" in x)
+            is_go = int(caps.get("group_capab", "0"), 16) & 1
+        log("p2p_group_owner_wait", peer=name, owner=bool(is_go))
     if not addr:
         raise ConnectionError("Wi-Fi Direct: bike not found")
     await loop.run_in_executor(None, lambda: cli("p2p_stop_find"))
