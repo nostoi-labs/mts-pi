@@ -5,6 +5,19 @@ Apple CarPlay on the **original 6.5" dashboard** of the Ducati Multistrada V4 S,
 the iPhone. The Pi connects to the dashboard the way a phone running the Ducati Connect app does, and to the iPhone
 it looks like a car with wireless CarPlay.
 
+![CarPlay on the dashboard of the Multistrada V4 S](docs/photos/carplay-on-the-dashboard.jpg)
+
+*CarPlay on the bike's own dashboard, 16 Nov 2026. The red icon in the second row is the button that leads back
+to the Pi's home screen: the picture on it is one the owner put on his own dongle, MTS Pi ships none (without one
+it is a plain red square with a letter).*
+
+| | |
+|---|---|
+| ![Map and music on the dashboard, engine running](docs/photos/carplay-map-on-the-dashboard.jpg) | ![From the map to the apps with the joystick](docs/photos/carplay-on-the-dashboard.gif) |
+
+*Left: CarPlay's own dashboard view, engine running. Right: from the map to the apps with the joystick, filmed on
+the bike (14 s, no sound).*
+
 What you get on the bike:
 
 - **CarPlay on the dashboard**, drawn at the dashboard's own size and driven with the handlebar joystick: Maps,
