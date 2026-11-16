@@ -39,7 +39,8 @@ What you get on the bike:
 > after that evening: once the dashboard dropped off the air for half a minute and CarPlay came back only after
 > key off and on (the part that was our fault is fixed, not yet tried on the bike again); incoming calls have
 > been tried on the bench only; Siri does not hear the helmet microphone (see [Known limits](#known-limits)).
-> The fixes made after that evening are in the current card image, which has not been on the bike yet.
+> The fixes made after that evening are in the current card image: it has been written to a card and started
+> from scratch on a real Pi, and has not been on the bike yet.
 > `install.sh` on a blank system has not been run on a real Pi yet. This page is updated as things are tried.
 
 > **Unofficial project, at your own risk.** MTS Pi is a hobby project, not a product. It is not affiliated with,
@@ -127,7 +128,8 @@ You need a computer with an SD card reader (or a USB adapter for microSD cards).
    then the verification and the final message (last two pictures).*
 4. **Start the Pi.** Put the card in the Pi, plug the Carlinkit into its USB port and power the Pi through its
    micro-USB port (at home from a 2 A supply, on the bike from the socket in the tank compartment). The first start
-   takes a few minutes: the Pi makes room on the card (its green light stays on while it does). When **MTS Pi**
+   takes about two minutes, measured on an old, slow card: the Pi makes room on the card (its green light stays
+   on while it does). When **MTS Pi**
    shows up among the Bluetooth devices on your iPhone, it is ready: go on with [Pairing](#pairing). The light on
    the Carlinkit stays red until CarPlay connects.
 
@@ -258,8 +260,8 @@ for the screen link, Wi-Fi on 2.4 GHz as on the bike.
 | The same during a call | 18–19 frames per second | bench, 10 Nov 2026 |
 | Bridge start → CarPlay connected | 4.5–8 s | bench |
 | The same on a freshly written card | 8.5–9 s | bench, 16 Nov 2026 |
-| First start of a ready-made card: power-on → CarPlay | about 2 min (slow Class 4 card) | bench, 16 Nov 2026 |
-| The same → home Wi-Fi and remote login | about 2.5 min | bench, 16 Nov 2026 |
+| First start of a ready-made card: power-on → CarPlay | about 2 min (slow Class 4 card; 1 min 54 s with the current image) | bench, 16 Nov 2026 |
+| The same → home Wi-Fi and remote login | about 2.5 min (2 min 38 s with the current image) | bench, 16 Nov 2026 |
 | Ring with the caller's name | 0.7 s | bench, 10 Nov 2026 |
 | Answer from the helmet → voice open | 0.15–0.2 s | bench |
 | Music back after a call | 0.6 s | bench, 10 Nov 2026 |
