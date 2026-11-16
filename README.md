@@ -1,15 +1,16 @@
 # MTS Pi — Apple CarPlay on the Ducati Multistrada V4 S dashboard
 
 Apple CarPlay on the **original 6.5" dashboard** of the Ducati Multistrada V4 S, using a **Raspberry Pi 3 A+** and a
-**Carlinkit CPC200-CCPA** dongle: about 110 € of parts at late-2026 prices, plus a microSD card. Nothing on the bike is modified and nothing is installed on
-the iPhone. The Pi connects to the dashboard the way a phone running the Ducati Connect app does, and to the iPhone
-it looks like a car with wireless CarPlay.
+**Carlinkit CPC200-CCPA** dongle: about 110 € of parts at late-2026 prices, plus a microSD card and a short USB
+cable. Nothing on the bike is modified and nothing is installed on the iPhone. The Pi sits in the tank
+compartment, powered by the USB socket there. It connects to the dashboard the way a phone running the Ducati
+Connect app does, and to the iPhone it looks like a car with wireless CarPlay.
 
 ![CarPlay on the dashboard of the Multistrada V4 S](docs/photos/carplay-on-the-dashboard.jpg)
 
-*CarPlay on the bike's own dashboard, 16 Nov 2026. The red icon in the second row is the button that leads back
-to the Pi's home screen: the picture on it is one the owner put on his own dongle, MTS Pi ships none (without one
-it is a plain red square with a letter).*
+*CarPlay on the bike's own dashboard, 16 Nov 2026. The first icon in the second row is the button that leads
+back to the Pi's home screen. The picture on it is the one we chose for our own dongle: MTS Pi ships none, and
+without one the button is a plain red square with the letter M.*
 
 | | |
 |---|---|
@@ -23,7 +24,8 @@ What you get on the bike:
 - **CarPlay on the dashboard**, drawn at the dashboard's own size and driven with the handlebar joystick: Maps,
   Waze, Google Maps, music, podcasts, messages;
 - **music and navigation voice in the helmet**, through the bike's own Bluetooth link to the intercom;
-- **phone calls**: ring with the caller's name, answer and hang up from the bike or the helmet button, voice both ways;
+- **phone calls**: ring with the caller's name, answer and hang up from the bike or the helmet button, voice
+  both ways;
 - the bike's own **Music** and **Phone** menus keep working: track title and play/pause/skip, phonebook, recent calls;
 - a small **home screen** of the Pi inside Ducati Connect: start and stop CarPlay, see what is connected, settings.
 
@@ -33,11 +35,12 @@ What you get on the bike:
 
 > **Status: beta, tried on the bike.** On 16 Nov 2026, on a Multistrada V4 S with the ready-made card: pairing
 > from scratch, CarPlay on the dashboard while riding, joystick, music with the titles in the bike's menu, a call
-> answered and closed from the bike, power from the USB socket in the tank compartment. Still open after that
-> evening: once the dashboard dropped off the air for half a minute and CarPlay came back only after key off and
-> on (the part that was our fault is fixed, not yet tried on the bike again), and Siri does not hear the helmet
-> microphone (see [Known limits](#known-limits)). `install.sh` on a blank system has not been run on a real Pi
-> yet. This page is updated as things are tried.
+> placed from CarPlay and closed from the bike, power from the USB socket in the tank compartment. Still open
+> after that evening: once the dashboard dropped off the air for half a minute and CarPlay came back only after
+> key off and on (the part that was our fault is fixed, not yet tried on the bike again); incoming calls have
+> been tried on the bench only; Siri does not hear the helmet microphone (see [Known limits](#known-limits)).
+> The fixes made after that evening are in the current card image, which has not been on the bike yet.
+> `install.sh` on a blank system has not been run on a real Pi yet. This page is updated as things are tried.
 
 > **Unofficial project, at your own risk.** MTS Pi is a hobby project, not a product. It is not affiliated with,
 > endorsed by or supported by Ducati, Apple, Bosch, Carlinkit or Raspberry Pi. Set things up with the bike standing
@@ -72,8 +75,9 @@ Two things make this possible on such a small board:
 - The dashboard tells the phone how big its picture is (848×304 on the V4 S), and CarPlay is asked for exactly
   that size. Nothing is scaled, and there are no black bands.
 - The Pi 3 A+ has one radio chip for Wi-Fi and Bluetooth, like a phone. It carries the Wi-Fi link to the dashboard
-  and three Bluetooth links at once (dashboard, helmet side through the bike, iPhone). Most of the work in this
-  project went into keeping that radio happy: see [Things we learned](#things-we-learned).
+  and two Bluetooth links at once, to the dashboard and to the iPhone, each with several services on it (the
+  helmets stay connected to the bike, as always). Most of the work in this project went into keeping that radio
+  happy: see [Things we learned](#things-we-learned).
 
 ## Hardware
 
@@ -81,12 +85,14 @@ Two things make this possible on such a small board:
 |---|---|
 | Raspberry Pi **3 Model A+** | The only board tested. Small, low power, hardware H.264 decoding, 2.4/5 GHz Wi-Fi and Bluetooth on one chip. Add a small heatsink. |
 | Carlinkit **CPC200-CCPA** | The "wireless CarPlay for Android head units" dongle (it shows up as *AutoKit*). **Not** the "wired to wireless" adapters such as the 2air: those need a car that already has CarPlay. Ours: USB ID 1314:1520, firmware 2025.10.15. Do not update the firmware if it works. |
-| microSD card | 8 GB is enough for space (the installed system takes about 3 GB). In practice: a 32 GB **Class 10** card (A1 if you can), from about 13 € for a budget brand to about 23 € for SanDisk or Samsung at late-2026 prices. Our bench tests ran on a SanDisk Ultra 32 GB (Class 10, A1). Avoid old Class 4 cards: we tried one, writing the image took about 20 minutes instead of 3. A "high endurance" card is not needed: the Pi writes very little. |
-| Case | Optional. We printed this one: [Ultra-slim snap-fit case for Raspberry Pi 3 A+](https://makerworld.com/en/models/2547063-ultra-slim-snap-fit-case-for-raspberry-pi-3a-plus) on MakerWorld. No 3D printer: the official Raspberry Pi 3 A+ case (red and white, about 5 € from Raspberry Pi resellers, often three times that on Amazon) is the simple choice; we have not measured temperatures inside it. Plastic is the safe choice: a closed metal case can weaken Wi-Fi and Bluetooth, which all go through the antenna on the board, and we have not tested one. Skip cases with a fan: a small 5 V fan is rated 0.1–0.2 A, which on top of our 0.89 A peak is too much for a 1 A socket. |
-| 5 V power | Measured **0.54–0.89 A at 5 V** with the dongle. Use a supply that gives 2 A or more: a weak one causes under-voltage and random faults. |
+| microSD card | 8 GB is enough for space (the installed system takes about 3 GB). In practice: a 32 GB **Class 10** card (A1 if you can), from about 13 € for a budget brand to about 23 € for SanDisk or Samsung at late-2026 prices. Our bench tests ran on a SanDisk Ultra 32 GB (Class 10, A1), the evening on the bike on a SanDisk Extreme 64 GB. Avoid old Class 4 cards: we tried one, writing the image took about 20 minutes instead of 3. A "high endurance" card is not needed: the Pi writes very little. |
+| Case | Optional. We printed this one: [Ultra-slim snap-fit case for Raspberry Pi 3 A+](https://makerworld.com/en/models/2547063-ultra-slim-snap-fit-case-for-raspberry-pi-3a-plus) on MakerWorld; with it the Pi fits in the tank compartment (photo in [Our build](#our-build)). No 3D printer: the official Raspberry Pi 3 A+ case (red and white, about 5 € from Raspberry Pi resellers, often three times that on Amazon) is the simple choice; we have not measured temperatures inside it. Plastic is the safe choice: a closed metal case can weaken Wi-Fi and Bluetooth, which all go through the antenna on the board, and we have not tested one. Skip cases with a fan: a small 5 V fan is rated 0.1–0.2 A, which on top of our 0.89 A peak is too much for a 1 A socket. |
+| 5 V power | On the bike: the **USB socket in the tank compartment**, which gives 1 A at most. That is where we tested it: no under-voltage through engine start, a ride, music and a call. On the bench the Pi with the dongle drew **0.54–0.89 A at 5 V**, so the margin on that socket is small: nothing else should share it. At home, a supply of 2 A or more. A weak supply or a poor cable causes under-voltage and random faults. |
+| Power cable | **USB-A to micro-USB**: the Pi 3 A+ is powered through its micro-USB port. Keep it short, 15–30 cm: there is little room in the tank compartment, and long thin cables lose voltage. A micro-USB plug **angled at 90°** sits better there than a straight one; for example [this 30 cm one](https://www.amazon.it/dp/B0B6YWZ42J) (an example of the kind, not a cable we have tried: check which way the plug points before you buy). |
 | iPhone | Any iPhone with CarPlay. |
 
-The Carlinkit plugs into the Pi's only USB port. That is all the wiring there is.
+The Carlinkit plugs into the Pi's only USB port, the power cable into its micro-USB port. That is all the wiring
+there is.
 
 ## Install
 
@@ -114,7 +120,8 @@ You need a computer with an SD card reader (or a USB adapter for microSD cards).
    | ![Summary, Write](docs/photos/imager-4-summary.png) | ![Confirm that the card is erased](docs/photos/imager-5-erase.png) | ![Writing](docs/photos/imager-6-writing.png) |
 
    *Raspberry Pi Imager 2.0 on a Mac, writing the image to an 8 GB card.*
-4. **Start the Pi.** Put the card in the Pi, plug the Carlinkit into its USB port and power it. The first start
+4. **Start the Pi.** Put the card in the Pi, plug the Carlinkit into its USB port and power the Pi through its
+   micro-USB port (at home from a 2 A supply, on the bike from the socket in the tank compartment). The first start
    takes a few minutes: the Pi makes room on the card (its green light stays on while it does). When **MTS Pi**
    shows up among the Bluetooth devices on your iPhone, it is ready: go on with [Pairing](#pairing). The light on
    the Carlinkit stays red until CarPlay connects.
@@ -135,6 +142,9 @@ power-on. Leave the file as it is if none of this means anything to you.
 > `install.sh` described below.
 
 ### The manual way: for people who want to look inside
+
+This path has not been run from start to finish on a real Pi yet; the ready-made image is built with the same
+`install.sh`.
 
 1. Write **Raspberry Pi OS Lite (64-bit)** to the SD card with Raspberry Pi Imager. In the Imager settings choose a
    user name and password, enter your home Wi-Fi **with its country**, and turn SSH on.
@@ -160,11 +170,12 @@ minute before you connect with SSH.
 
 ## Pairing
 
-Once, with the bike standing still and the Pi powered:
+Three pairings, once. Steps 2 and 3 need only the Pi and the iPhone and can be done at home; step 1 is done at
+the bike, standing still, with the Pi powered.
 
 1. **Bike ↔ Pi.** On the dashboard: Settings › **Bluetooth** › **Pairing** › **Phone**, and pick **MTS Pi**.
    The dashboard shows a pairing code: choose **Accept** (the Pi accepts on its side by itself). A few seconds
-   later it says "Paired", and if music is playing in CarPlay you hear it in the helmet.
+   later it says "Paired".
 
    | | | |
    |---|---|---|
@@ -178,6 +189,9 @@ Once, with the bike standing still and the Pi powered:
    "Use CarPlay". It takes about ten seconds, once; after that CarPlay connects by itself, about ten seconds
    after the Pi has started.
 
+With the three pairings done, whatever plays in CarPlay comes out of the helmet, and **Ducati Connect** on the
+dashboard becomes selectable.
+
 If your iPhone was paired with the bike directly, **disconnect** it there (no need to delete the pairing): the
 bike keeps one phone at a time, and now that phone is the Pi. As long as the iPhone stays in the bike's list, the
 bike may connect to it again at key-on instead of the Pi; when that happens Ducati Connect has no CarPlay, and
@@ -190,8 +204,9 @@ disconnecting the iPhone in the bike's Bluetooth menu brings it back.
 2. Open **Ducati Connect** on the dashboard: the Pi's home screen appears, and CarPlay starts by itself (you can
    turn that off in the settings).
 3. In CarPlay the joystick moves the selection and the centre press selects. **Hold the joystick up for one
-   second to go back** one level. The **MTS** icon among the apps brings you back to the Pi's home screen. Holding
-   the joystick left is the bike's own way out of Ducati Connect.
+   second to go back** one level. The red **M** icon among the apps (or your own picture, see
+   [Settings](#settings)) brings you back to the Pi's home screen. Holding the joystick left is the bike's own
+   way out of Ducati Connect.
 4. Calls ring on the dashboard with the caller's name; answer and hang up from the bike or from the helmet.
 5. Leave Ducati Connect whenever you want: music and calls keep going.
 6. If the dashboard says "Ducati Connect may have a connection problem" and CarPlay does not come back within a
@@ -209,17 +224,19 @@ you leave Ducati Connect, and picture quality (three steps: higher quality means
 | CarPlay on the dashboard | **bike** | Carlinkit over USB → H.264 decoded on the Pi → JPEG frames over Wi-Fi |
 | Joystick in CarPlay | **bike** | arrows and OK sent to the dongle as CarPlay keys; joystick held up = back |
 | Music in the helmet | **bike** | CarPlay audio → A2DP |
-| A call, answered and closed from the bike | **bike** | the dongle's audio commands → HFP towards the bike, microphone back to CarPlay |
+| A call placed from CarPlay, closed from the bike | **bike** | the dongle's audio commands → HFP towards the bike, microphone back to CarPlay |
+| Incoming calls, answer from the bike or the helmet | bench | the same path; the bike rings through HFP |
 | Caller's name | bench | number from the iPhone's HFP link, name from the phonebook kept on the SD card |
 | The bike's Music menu | **bike** | track title from the dongle → AVRCP; the bike's buttons → CarPlay play/pause/skip |
-| Phonebook in the bike's Phone menu | bench | PBAP from the iPhone to the Pi, then from the Pi to the bike |
+| Phonebook in the bike's Phone menu | bench | PBAP from the iPhone to the Pi, then from the Pi to the bike. On the bike the dashboard downloaded the whole phonebook; we did not open the menu to look. |
 | Battery and signal on the home screen | bench | the iPhone's HFP indicators |
 | The Pi's home screen in Ducati Connect, joystick | **bike** | first tried on the Multistrada on 24 Oct 2026 |
 | Text messages on the bike | not yet | |
 | Siri | not yet | on the bike Siri started but did not hear the helmet microphone |
 
-"Bike" means: tried on the Multistrada V4 S on 16 Nov 2026, with the ready-made card. "Bench" means: real Pi, real Carlinkit, real iPhone, a helmet intercom playing the part of the bike's Bluetooth,
-an emulated dashboard for the screen link, Wi-Fi on 2.4 GHz as on the bike.
+"Bike" means: tried on the Multistrada V4 S on 16 Nov 2026, with the ready-made card. "Bench" means: real Pi,
+real Carlinkit, real iPhone, a helmet intercom playing the part of the bike's Bluetooth, an emulated dashboard
+for the screen link, Wi-Fi on 2.4 GHz as on the bike.
 
 ## Measured
 
@@ -230,7 +247,7 @@ an emulated dashboard for the screen link, Wi-Fi on 2.4 GHz as on the bike.
 | CarPlay on the dashboard while riding (map and music) | 11 frames per second (7–13), longest pause 3.2 s | bike, 16 Nov 2026 |
 | Key-on → CarPlay ready on the dashboard, ready-made card | about 100 s (Pi boot 29 s, the bike connected at 76 s, Wi-Fi 18 s) | bike, 16 Nov 2026 |
 | Music back after a call closed from the bike | 0.5 s | bike, 16 Nov 2026 |
-| Power from the USB socket in the tank compartment | no under-voltage through engine start and a ride (current not measured) | bike, 16 Nov 2026 |
+| Power from the USB socket in the tank compartment (1 A at most) | no under-voltage through engine start and a ride; current on the bike not measured | bike, 16 Nov 2026 |
 | Temperature in the tank compartment, 15 °C outside | 27–41 °C | bike, 16 Nov 2026 |
 | CarPlay with a moving map and music | 20–22 frames per second at high quality | bench, 10 Nov 2026 |
 | The same during a call | 18–19 frames per second | bench, 10 Nov 2026 |
@@ -241,14 +258,15 @@ an emulated dashboard for the screen link, Wi-Fi on 2.4 GHz as on the bike.
 | Ring with the caller's name | 0.7 s | bench, 10 Nov 2026 |
 | Answer from the helmet → voice open | 0.15–0.2 s | bench |
 | Music back after a call | 0.6 s | bench, 10 Nov 2026 |
-| Power | 0.54–0.89 A at 5 V | bench |
+| Current drawn by the Pi with the dongle | 0.54–0.89 A at 5 V | bench |
 | Temperature with a copper heatsink | 55 °C | bench |
 
 ## Things we learned
 
 Notes for anyone building something similar. Each of these cost an evening or more.
 
-- **One radio, four links.** Wi-Fi to the dashboard is on 2.4 GHz, the same band as Bluetooth, on the same chip.
+- **One radio, three links.** Wi-Fi to the dashboard is on 2.4 GHz, the same band as the two Bluetooth links, on
+  the same chip.
   It holds as long as Bluetooth stays light. What made the difference: idle Bluetooth links go to low-power mode
   after 2 s instead of 45 s; the Pi takes the "central" role on every link, so the radio serves one schedule
   instead of two; and no audio ever comes from the iPhone over Bluetooth.
@@ -272,8 +290,9 @@ Notes for anyone building something similar. Each of these cost an evening or mo
 - **A fresh Raspberry Pi OS keeps Wi-Fi off twice.** Unblocking the radio is not enough: NetworkManager also
   remembers Wi-Fi as switched off until a country is chosen. The home network was saved and never joined until
   the Pi turned Wi-Fi on there too.
-- **The first start of a card can be rough.** On one card the Pi restarted abruptly twice during its first start (on another it did not). A settings
-  line written a few seconds earlier came back as zero bytes, the system then ignored the whole settings file, and
+- **The first start of a card can be rough.** On one card the Pi restarted abruptly twice during its first start
+  (on another it did not). A settings line written a few seconds earlier came back as zero bytes, the system
+  then ignored the whole settings file, and
   the bridge started without the dongle (red light, no CarPlay). Settings are now written aside, swapped in and
   flushed to the card.
 - **A task nobody holds can vanish.** Python's event loop keeps only weak references to its tasks. The task that
@@ -302,8 +321,10 @@ change: `sudo systemctl restart mtspi-bridge mtspi-hfp`.
 | `BIKE_GRACE` | seconds without the bike before returning to the home Wi-Fi (default 45) |
 | `HFP_VR` | `1` turns on Siri from the bike's phone button (experimental) |
 
-The icon inside CarPlay is a plain red square with the letter M, labelled MTS. To use your own picture, save it as
-`/var/lib/mtspi/oem_icon.png` (256×256 PNG).
+The icon inside CarPlay is a plain red square with the letter M. To use your own picture, save it as
+`/var/lib/mtspi/oem_icon.png` (256×256 PNG). The iPhone reads the icon when CarPlay is paired: to change it
+later, forget the car on the iPhone (Settings › General › CarPlay), unplug the dongle and plug it back in, and
+pair again.
 
 Logs: `journalctl -u mtspi-bridge -u mtspi-hfp -u mtspi-wifi-mode`, plus one folder per run in `/var/lib/mtspi/`
 (the last 20 are kept).
@@ -320,12 +341,14 @@ Logs: `journalctl -u mtspi-bridge -u mtspi-hfp -u mtspi-wifi-mode`, plus one fol
   by itself; CarPlay came back only after key off and on, because of a defect of ours that is now fixed (see
   [Things we learned](#things-we-learned)). Coming back by itself after such a drop has not been tried on the
   bike yet.
+- If the iPhone is still in the bike's list of devices, at key-on the bike may connect to it instead of the Pi:
+  disconnect it in the bike's Bluetooth menu (see [Pairing](#pairing)).
 - Siri does not hear the helmet microphone yet.
 - The joystick has no Back key and its centre press cannot be held (the dashboard does not pass that on): Back is
-  the joystick held up.
-- Reading the Pi's logs over the iPhone's Bluetooth hotspot while CarPlay is on the dashboard slows the picture
-  down: the hotspot shares the radio with the dashboard link.
-- The SD card is not protected against the bike cutting the power. Keep a copy of the card once it works.
+  the joystick held up. Leaving Ducati Connect with the joystick held left also takes CarPlay one step back.
+- The socket in the tank compartment stays on for a few seconds after key-off and then cuts the power: the Pi is
+  switched off abruptly every time, and the SD card is not protected against that yet. Keep a copy of the card
+  once it works.
 - The files in `myspin/` are binary and built for Raspberry Pi OS 64-bit with Python 3.13 only.
 - Tested with one bike, one iPhone and one dongle.
 - The "pro" variant mentioned in the code (a second, external Bluetooth radio) is not part of this release.
@@ -336,7 +359,7 @@ What is planned for the next releases, roughly in this order.
 
 | | What | Why |
 |---|---|---|
-| 1 | **Steady on the bike**: find why the link to the dashboard dropped once, and come back from a drop in seconds without the key | the first evening on the bike worked, with one drop |
+| 1 | **Steady on the bike**: find why the link to the dashboard dropped once, come back from a drop in seconds without the key, keep the bike from picking the iPhone at key-on | the first evening on the bike worked, with one drop |
 | 2 | **Status light**: the Pi's LED tells you when it is ready to pair and when something is wrong | the ready-made card has no screen to look at |
 | 3 | **SD card protection**: a read-only system | the bike cuts the power without warning |
 | 4 | **Leaner system**: everything the Pi does not need is turned off | faster start, less power, less heat |
@@ -352,8 +375,7 @@ the home screen.
 
 ![The Pi in the tank compartment](docs/photos/pi-in-the-tank-compartment.jpg)
 
-*The Pi in its printed case in the tank compartment, powered by the bike's USB socket there. The Carlinkit dongle
-is plugged into the Pi's USB port.*
+*The Pi in its printed case in the tank compartment, powered by the bike's USB socket there (top of the picture).*
 
 ![The bike's Music menu](docs/photos/music-menu-on-the-dashboard.jpg)
 
@@ -367,7 +389,8 @@ is plugged into the Pi's USB port.*
 - 16 Nov 2026 — first start of the ready-made card on a real Pi: two defects found and fixed, then pairing, CarPlay,
   phonebook and messages from scratch
 - 16 Nov 2026, evening — on the bike with that card: pairing from scratch, CarPlay on the dashboard for a ride,
-  music, a call; Back added to the joystick on the spot
+  music, a call; Back added to the joystick on the spot, and at home the logs showed why CarPlay had not come
+  back by itself after a drop
 
 ## Repository layout
 
@@ -383,10 +406,11 @@ mtspi/            the program (Python)
   bluez.py          BlueZ, oFono and obexd over D-Bus
   session.py        Wi-Fi Direct to the dashboard and session start-up
   dashboard.py      the Pi's home screen
+  tasks.py          keeps background tasks alive
 myspin/           phone side of the dashboard's screen link, binary only, non-commercial use
 system/           services, system configuration, helper scripts, the optional settings file
 tests/            automatic tests of the open part
-docs/             pictures
+docs/             diagrams, screenshots and photos
 ```
 
 ## Credits and references
@@ -399,7 +423,8 @@ docs/             pictures
 
 Ducati, Multistrada, Ducati Connect, Apple, iPhone, CarPlay, Siri, mySPIN, Bosch, Carlinkit, AutoKit, Waze, Google
 Maps and Raspberry Pi are trademarks of their respective owners, used here only to describe what the project
-works with. The repository contains no third-party logos or artwork.
+works with. The code contains no third-party logos or artwork. The photos show our own bike: its dashboard, and
+CarPlay with the apps and the icon that were on it that evening.
 
 ## At your own risk
 
