@@ -121,8 +121,10 @@ You need a computer with an SD card reader (or a USB adapter for microSD cards).
    |---|---|---|
    | ![Device: Raspberry Pi 3](docs/photos/imager-1-device.png) | ![Operating system: Use custom](docs/photos/imager-2-use-custom.png) | ![Storage: the microSD card](docs/photos/imager-3-storage.png) |
    | ![Summary, Write](docs/photos/imager-4-summary.png) | ![Confirm that the card is erased](docs/photos/imager-5-erase.png) | ![Writing](docs/photos/imager-6-writing.png) |
+   | ![Verifying, after the counter has passed 100 %](docs/photos/imager-7-verifying.png) | ![Write complete: the card can be removed](docs/photos/imager-8-done.png) | |
 
-   *Raspberry Pi Imager 2.0 on a Mac, writing the image to an 8 GB card.*
+   *Raspberry Pi Imager 2.0 on a Mac, writing the image to an old 8 GB Class 4 card: about 17 minutes of writing,
+   then the verification and the final message (last two pictures).*
 4. **Start the Pi.** Put the card in the Pi, plug the Carlinkit into its USB port and power the Pi through its
    micro-USB port (at home from a 2 A supply, on the bike from the socket in the tank compartment). The first start
    takes a few minutes: the Pi makes room on the card (its green light stays on while it does). When **MTS Pi**
