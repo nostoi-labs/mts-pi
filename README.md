@@ -140,8 +140,14 @@ minute before you connect with SSH.
 
 Once, with the bike standing still and the Pi powered:
 
-1. **Bike ↔ Pi.** On the dashboard open the Bluetooth settings, pair a new smartphone and pick **MTS Pi**. The Pi
-   accepts by itself.
+1. **Bike ↔ Pi.** On the dashboard: Settings › **Bluetooth** › **Pairing** › **Phone**, and pick **MTS Pi**.
+   The dashboard shows a pairing code: choose **Accept** (the Pi accepts on its side by itself). A few seconds
+   later it says "Paired", and if music is playing in CarPlay you hear it in the helmet.
+
+   | | | |
+   |---|---|---|
+   | ![Bluetooth in the settings menu](docs/photos/pairing-1-bluetooth-menu.jpg) | ![Pairing, Phone](docs/photos/pairing-2-phone.jpg) | ![MTS Pi found](docs/photos/pairing-3-mts-pi.jpg) |
+   | ![Pairing code, Accept](docs/photos/pairing-4-code.jpg) | ![Paired](docs/photos/pairing-5-paired.jpg) | ![The bike's device list](docs/photos/bluetooth-list-on-the-dashboard.jpg) |
 2. **iPhone ↔ Pi.** On the iPhone: Settings › Bluetooth › **MTS Pi**, and confirm the code the iPhone shows (the
    Pi accepts by itself). Then tap the **(i)** next to MTS Pi and turn on **Sync Contacts** and **Show
    Notifications**: the bike's Phone menu and the caller's name use them. The two switches appear a few seconds
@@ -157,8 +163,8 @@ disconnecting the iPhone in the bike's Bluetooth menu brings it back.
 
 ## Using it
 
-1. Turn the key. The Pi boots with the bike and connects by itself: Ducati Connect was ready about 53 s after
-   key-on in our test on the bike.
+1. Turn the key. The Pi boots with the bike and connects by itself: Ducati Connect was ready between 53 s and
+   100 s after key-on in our tests on the bike.
 2. Open **Ducati Connect** on the dashboard: the Pi's home screen appears, and CarPlay starts by itself (you can
    turn that off in the settings).
 3. In CarPlay the joystick moves the selection and the centre press selects. **Hold the joystick up for one
@@ -199,6 +205,11 @@ an emulated dashboard for the screen link, Wi-Fi on 2.4 GHz as on the bike.
 |---|---|---|
 | Key-on → Ducati Connect ready | about 53 s (Pi boot 28 s + Wi-Fi 16 s) | bike, 24 Oct 2026 |
 | Frames the dashboard asks for | 6–13 per second | bike, 24 Oct 2026 |
+| CarPlay on the dashboard while riding (map and music) | 11 frames per second (7–13), longest pause 3.2 s | bike, 16 Nov 2026 |
+| Key-on → CarPlay ready on the dashboard, ready-made card | about 100 s (Pi boot 29 s, the bike connected at 76 s, Wi-Fi 18 s) | bike, 16 Nov 2026 |
+| Music back after a call closed from the bike | 0.5 s | bike, 16 Nov 2026 |
+| Power from the USB socket in the tank compartment | no under-voltage through engine start and a ride (current not measured) | bike, 16 Nov 2026 |
+| Temperature in the tank compartment, 15 °C outside | 27–41 °C | bike, 16 Nov 2026 |
 | CarPlay with a moving map and music | 20–22 frames per second at high quality | bench, 10 Nov 2026 |
 | The same during a call | 18–19 frames per second | bench, 10 Nov 2026 |
 | Bridge start → CarPlay connected | 4.5–8 s | bench |
@@ -317,7 +328,14 @@ the home screen.
 
 ## Our build
 
-Photos of the installation on the bike and the build log will be added here.
+![The Pi in the tank compartment](docs/photos/pi-in-the-tank-compartment.jpg)
+
+*The Pi in its printed case in the tank compartment, powered by the bike's USB socket there. The Carlinkit dongle
+is plugged into the Pi's USB port.*
+
+![The bike's Music menu](docs/photos/music-menu-on-the-dashboard.jpg)
+
+*The bike's own Music menu, outside Ducati Connect: the track title comes from CarPlay through the Pi.*
 
 - 22 Oct 2026 — first code: the screen link against an emulated dashboard
 - 24 Oct 2026 — first evening on the bike: the Pi's home screen on the real dashboard, joystick, cold start
