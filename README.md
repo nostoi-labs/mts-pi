@@ -111,8 +111,11 @@ You need a computer with an SD card reader (or a USB adapter for microSD cards).
    and write it. Look at the size when you choose the card: every external disk of the computer is in that list,
    and the one you pick is erased. With a custom file the program skips its Customisation step; an older version
    may ask whether to apply customisation settings: answer **No**, nothing needs to be set. Writing takes a few
-   minutes with a Class 10 card. The progress counter can go past 100 % (we saw 110 %): the program
-   underestimates the size of the file. What counts is the verification that follows.
+   minutes with a Class 10 card.
+
+   **The progress counter goes past 100 %** (we saw 110 % every time): the program underestimates the size of the
+   file. Nothing is wrong: do not stop it and do not pull the card out. Wait until it has verified the card and
+   says you can remove it.
 
    | | | |
    |---|---|---|
