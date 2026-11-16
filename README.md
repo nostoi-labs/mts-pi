@@ -100,11 +100,20 @@ You need a computer with an SD card reader (or a USB adapter for microSD cards).
    [Releases page](https://github.com/nostoi-labs/mts-pi/releases) of this repository.
 2. **Install [Raspberry Pi Imager](https://www.raspberrypi.com/software/)**, the free program that writes cards
    (Windows, macOS, Linux).
-3. **Write the card.** In Raspberry Pi Imager choose the device (*Raspberry Pi 3*), then as operating system pick
-   **Use custom** and select the file you downloaded, then choose your microSD card and write it. If the program
-   asks whether to apply customisation settings, answer **No**: nothing needs to be set. Writing takes a few
+3. **Write the card.** In Raspberry Pi Imager choose the device (*Raspberry Pi 3*), then as operating system
+   scroll to the bottom, pick **Use custom** and select the file you downloaded, then choose your microSD card
+   and write it. Look at the size when you choose the card: every external disk of the computer is in that list,
+   and the one you pick is erased. With a custom file the program skips its Customisation step; an older version
+   may ask whether to apply customisation settings: answer **No**, nothing needs to be set. Writing takes a few
    minutes with a Class 10 card. The progress counter can go past 100 % (we saw 110 %): the program
    underestimates the size of the file. What counts is the verification that follows.
+
+   | | | |
+   |---|---|---|
+   | ![Device: Raspberry Pi 3](docs/photos/imager-1-device.png) | ![Operating system: Use custom](docs/photos/imager-2-use-custom.png) | ![Storage: the microSD card](docs/photos/imager-3-storage.png) |
+   | ![Summary, Write](docs/photos/imager-4-summary.png) | ![Confirm that the card is erased](docs/photos/imager-5-erase.png) | ![Writing](docs/photos/imager-6-writing.png) |
+
+   *Raspberry Pi Imager 2.0 on a Mac, writing the image to an 8 GB card.*
 4. **Start the Pi.** Put the card in the Pi, plug the Carlinkit into its USB port and power it. The first start
    takes a few minutes: the Pi makes room on the card (its green light stays on while it does). When **MTS Pi**
    shows up among the Bluetooth devices on your iPhone, it is ready: go on with [Pairing](#pairing). The light on
