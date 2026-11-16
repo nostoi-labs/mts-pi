@@ -1,7 +1,7 @@
 # MTS Pi — Apple CarPlay on the Ducati Multistrada V4 S dashboard
 
 Apple CarPlay on the **original 6.5" dashboard** of the Ducati Multistrada V4 S, using a **Raspberry Pi 3 A+** and a
-**Carlinkit CPC200-CCPA** dongle: about 110 € of parts at late-2026 prices. Nothing on the bike is modified and nothing is installed on
+**Carlinkit CPC200-CCPA** dongle: about 110 € of parts at late-2026 prices, plus a microSD card. Nothing on the bike is modified and nothing is installed on
 the iPhone. The Pi connects to the dashboard the way a phone running the Ducati Connect app does, and to the iPhone
 it looks like a car with wireless CarPlay.
 
@@ -19,9 +19,11 @@ What you get on the bike:
 *The Pi's home screen, drawn by the code at 848×304: the area the dashboard gives to Ducati Connect.*
 
 > **Status: beta.** Everything above works on the bench with the real Pi, the real dongle, a real iPhone and a
-> helmet intercom. On the bike we have run the Pi's own screen, the joystick and a cold start (24 Oct 2026);
-> **CarPlay on the real dashboard and a from-scratch installation (ready-made card and `install.sh`) are the next
-> tests** and have not been done yet. This page is updated as they happen.
+> helmet intercom. On the bike we have run the Pi's own screen, the joystick and a cold start (24 Oct 2026).
+> The ready-made card has been started from scratch on a real Pi (16 Nov 2026): it reaches CarPlay and the home Wi-Fi
+> by itself, and once the iPhone is paired the phonebook and the messages arrive. **CarPlay on the real dashboard and pairing with the bike from scratch are the
+> next tests**; `install.sh` on a blank system has not been run on a real Pi yet. This page is updated as they
+> happen.
 
 > **Unofficial project, at your own risk.** MTS Pi is a hobby project, not a product. It is not affiliated with,
 > endorsed by or supported by Ducati, Apple, Bosch, Carlinkit or Raspberry Pi. Set things up with the bike standing
@@ -65,7 +67,7 @@ Two things make this possible on such a small board:
 |---|---|
 | Raspberry Pi **3 Model A+** | The only board tested. Small, low power, hardware H.264 decoding, 2.4/5 GHz Wi-Fi and Bluetooth on one chip. Add a small heatsink. |
 | Carlinkit **CPC200-CCPA** | The "wireless CarPlay for Android head units" dongle (it shows up as *AutoKit*). **Not** the "wired to wireless" adapters such as the 2air: those need a car that already has CarPlay. Ours: USB ID 1314:1520, firmware 2025.10.15. Do not update the firmware if it works. |
-| microSD card | 16 GB or more. A high-endurance card is a good idea: the bike cuts the power without warning. |
+| microSD card | 8 GB is enough for space (the installed system takes about 3 GB). In practice: a 32 GB **Class 10** card (A1 if you can), from about 13 € for a budget brand to about 23 € for SanDisk or Samsung at late-2026 prices. Our bench tests ran on a SanDisk Ultra 32 GB (Class 10, A1). Avoid old Class 4 cards: we tried one, writing the image took about 20 minutes instead of 3. A "high endurance" card is not needed: the Pi writes very little. |
 | 5 V power | Measured **0.54–0.89 A at 5 V** with the dongle. Use a supply that gives 2 A or more: a weak one causes under-voltage and random faults. |
 | iPhone | Any iPhone with CarPlay. |
 
@@ -85,19 +87,24 @@ You need a computer with an SD card reader (or a USB adapter for microSD cards).
    (Windows, macOS, Linux).
 3. **Write the card.** In Raspberry Pi Imager choose the device (*Raspberry Pi 3*), then as operating system pick
    **Use custom** and select the file you downloaded, then choose your microSD card and write it. If the program
-   asks whether to apply customisation settings, answer **No**: nothing needs to be set.
+   asks whether to apply customisation settings, answer **No**: nothing needs to be set. Writing takes a few
+   minutes with a Class 10 card. The progress counter can go past 100 % (we saw 110 %): the program
+   underestimates the size of the file. What counts is the verification that follows.
 4. **Start the Pi.** Put the card in the Pi, plug the Carlinkit into its USB port and power it. The first start
-   takes a couple of minutes. When **MTS Pi** shows up among the Bluetooth devices on your iPhone, it is ready:
-   go on with [Pairing](#pairing).
+   takes a few minutes: the Pi makes room on the card (its green light stays on while it does). When **MTS Pi**
+   shows up among the Bluetooth devices on your iPhone, it is ready: go on with [Pairing](#pairing). The light on
+   the Carlinkit stays red until CarPlay connects.
 
 That is all. The Pi does not need your home Wi-Fi, a keyboard or a screen. To update, write a newer image the same
 way and pair again.
 
-**Optional: your country, home Wi-Fi and remote access.** After writing the card, your computer shows a small
-drive called `bootfs`. On it there is a text file, `mtspi.txt`. Open it with any text editor and fill in what you
-want: the two-letter code of your country (recommended), the name and password of your home Wi-Fi, and an SSH
-public key if you want to log in to the Pi from your computer. The Pi applies the file at every start and removes
-the Wi-Fi password from it once it has been used. Leave the file as it is if none of this means anything to you.
+**Optional: your country, home Wi-Fi and remote access.** After writing the card, take it out and put it back
+in: your computer shows a small drive called `bootfs`. On it there is a text file, `mtspi.txt`. Open it with any
+text editor and fill in what you want: the two-letter code of your country (recommended), the name and password
+of your home Wi-Fi, and an SSH public key if you want to log in to the Pi from your computer
+(`ssh mtspi@mts-pi.local`). The Pi applies the file at every start and removes the Wi-Fi password from it once it
+has been used. With a home Wi-Fi set, and no bike around, the Pi joins it about a minute and a half after
+power-on. Leave the file as it is if none of this means anything to you.
 
 > The ready-made image is built automatically from this repository by
 > [`image/build.sh`](image/build.sh): it is the official Raspberry Pi OS Lite with MTS Pi installed by the same
@@ -133,10 +140,13 @@ Once, with the bike standing still and the Pi powered:
 
 1. **Bike ↔ Pi.** On the dashboard open the Bluetooth settings, pair a new smartphone and pick **MTS Pi**. The Pi
    accepts by itself.
-2. **iPhone ↔ Pi.** On the iPhone: Settings › Bluetooth › **MTS Pi**. Allow contacts and notifications when asked:
-   the bike's Phone menu uses them.
+2. **iPhone ↔ Pi.** On the iPhone: Settings › Bluetooth › **MTS Pi**, and confirm the code the iPhone shows (the
+   Pi accepts by itself). Then tap the **(i)** next to MTS Pi and turn on **Sync Contacts** and **Show
+   Notifications**: the bike's Phone menu and the caller's name use them. The two switches appear a few seconds
+   after pairing; the phonebook reaches the Pi within a few minutes.
 3. **iPhone ↔ Carlinkit.** In the same list pick the dongle (its name starts with **AutoKit**) and accept
-   "Use CarPlay". It takes about ten seconds, once; after that CarPlay connects by itself.
+   "Use CarPlay". It takes about ten seconds, once; after that CarPlay connects by itself, about ten seconds
+   after the Pi has started.
 
 If your iPhone was paired with the bike directly, **disconnect** it there (no need to delete the pairing): the
 bike keeps one phone at a time, and now that phone is the Pi.
@@ -185,6 +195,9 @@ an emulated dashboard for the screen link, Wi-Fi on 2.4 GHz as on the bike.
 | CarPlay with a moving map and music | 20–22 frames per second at high quality | bench, 10 Nov 2026 |
 | The same during a call | 18–19 frames per second | bench, 10 Nov 2026 |
 | Bridge start → CarPlay connected | 4.5–8 s | bench |
+| The same on a freshly written card | 8.5–9 s | bench, 16 Nov 2026 |
+| First start of a ready-made card: power-on → CarPlay | about 2 min (slow Class 4 card) | bench, 16 Nov 2026 |
+| The same → home Wi-Fi and remote login | about 2.5 min | bench, 16 Nov 2026 |
 | Ring with the caller's name | 0.7 s | bench, 10 Nov 2026 |
 | Answer from the helmet → voice open | 0.15–0.2 s | bench |
 | Music back after a call | 0.6 s | bench, 10 Nov 2026 |
@@ -216,6 +229,16 @@ Notes for anyone building something similar. Each of these cost an evening or mo
   without a parser delay.
 - **The dongle reports calls through audio commands**, not through a call-status message, and it must be told
   that it is not in "HiCar" mode or the iPhone never sees it.
+- **A fresh Raspberry Pi OS keeps Wi-Fi off twice.** Unblocking the radio is not enough: NetworkManager also
+  remembers Wi-Fi as switched off until a country is chosen. The home network was saved and never joined until
+  the Pi turned Wi-Fi on there too.
+- **The first start of a card can be rough.** On one card the Pi restarted abruptly twice during its first start (on another it did not). A settings
+  line written a few seconds earlier came back as zero bytes, the system then ignored the whole settings file, and
+  the bridge started without the dongle (red light, no CarPlay). Settings are now written aside, swapped in and
+  flushed to the card.
+- **A card you cannot reach can still tell you what happened.** The small `bootfs` partition is readable from any
+  computer: a script started from `cmdline.txt` copied the logs there, and that is how the two problems above
+  were found without a screen, a keyboard or a network.
 
 ## Settings
 
@@ -276,6 +299,8 @@ Photos of the installation on the bike and the build log will be added here.
 - 26 Oct 2026 — the real Carlinkit on the bench: CarPlay at the dashboard's size, music and calls
 - 10 Nov 2026 — calls handled from the helmet, the iPhone always on CarPlay, about 20 frames per second with music
 - 14 Nov 2026 — installer and clean-up for this repository
+- 16 Nov 2026 — first start of the ready-made card on a real Pi: two defects found and fixed, then pairing, CarPlay,
+  phonebook and messages from scratch
 
 ## Repository layout
 
