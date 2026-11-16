@@ -82,6 +82,11 @@ Two things make this possible on such a small board:
 
 ## Hardware
 
+![The Carlinkit dongle plugged into the Raspberry Pi in its case](docs/photos/hardware-pi-and-dongle.jpg)
+
+*All of it: the Carlinkit dongle (left) plugged into the Raspberry Pi 3 A+ in its printed case (right). The case
+is about 7 cm wide.*
+
 | Part | Notes |
 |---|---|
 | Raspberry Pi **3 Model A+** | The only board tested. Small, low power, hardware H.264 decoding, 2.4/5 GHz Wi-Fi and Bluetooth on one chip. Add a small heatsink. |
@@ -94,6 +99,14 @@ Two things make this possible on such a small board:
 
 The Carlinkit plugs into the Pi's only USB port, the power cable into its micro-USB port. That is all the wiring
 there is.
+
+| | | |
+|---|---|---|
+| ![The Pi 3 A+ in the open case, with a copper heatsink](docs/photos/hardware-pi-inside.jpg) | ![The side of the case: micro-USB power, HDMI, audio](docs/photos/hardware-power-port.jpg) | ![The Carlinkit dongle](docs/photos/hardware-dongle.jpg) |
+
+*Left: the Pi 3 A+ in the bottom half of the case, with the small copper heatsink on the processor and the
+dongle's plug in the USB port. Centre: the side with the power input, the small micro-USB port on the left (HDMI
+and audio are not used). Right: the dongle.*
 
 ## Install
 
@@ -434,8 +447,8 @@ docs/             diagrams, screenshots and photos
 
 Ducati, Multistrada, Ducati Connect, Apple, iPhone, CarPlay, Siri, mySPIN, Bosch, Carlinkit, AutoKit, Waze, Google
 Maps and Raspberry Pi are trademarks of their respective owners, used here only to describe what the project
-works with. The code contains no third-party logos or artwork. The photos show our own bike: its dashboard, and
-CarPlay with the apps and the icon that were on it that evening.
+works with. The code contains no third-party logos or artwork. The photos show our own bike and parts: the
+dashboard, the Pi, the dongle, and CarPlay with the apps and the icon that were on it that evening.
 
 ## At your own risk
 
