@@ -274,7 +274,7 @@ for the screen link, Wi-Fi on 2.4 GHz as on the bike.
 | Key-on → CarPlay ready on the dashboard, ready-made card | about 100 s (Pi boot 29 s, the bike connected at 76 s, Wi-Fi 18 s) | bike, 16 Nov 2026 |
 | Music back after a call closed from the bike | 0.5 s | bike, 16 Nov 2026 |
 | Power from the USB socket in the tank compartment (1 A at most) | no under-voltage through engine start and a ride; current on the bike not measured | bike, 16 Nov 2026 |
-| Temperature in the tank compartment, 15 °C outside | 27–41 °C | bike, 16 Nov 2026 |
+| Temperature in the tank compartment (the one without the fan), 15 °C outside | 27–41 °C | bike, 16 Nov 2026 |
 | CarPlay with a moving map and music | 20–22 frames per second at high quality | bench, 10 Nov 2026 |
 | The same during a call | 18–19 frames per second | bench, 10 Nov 2026 |
 | Bridge start → CarPlay connected | 4.5–8 s | bench |
@@ -378,7 +378,7 @@ Logs: `journalctl -u mtspi-bridge -u mtspi-hfp -u mtspi-wifi-mode`, plus one fol
   switched off abruptly every time, and the SD card is not protected against that yet. Keep a copy of the card
   once it works.
 - Summer heat has not been tried. The one evening on the bike was at 15 °C outside, and the Pi stayed between
-  27 and 41 °C in the closed tank compartment. It will be warmer in summer and we have no numbers yet; a Pi 3 A+
+  27 and 41 °C in the closed tank compartment (ours is the one without the fan). It will be warmer in summer and we have no numbers yet; a Pi 3 A+
   starts slowing itself down at 60 °C. Ducati makes a version of that compartment with a small fan, meant to
   keep a phone cool: recent bikes have it, and dealers have fitted it to earlier ones. If yours has it, all the
   better; if not, it is worth asking your dealer.
