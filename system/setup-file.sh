@@ -9,6 +9,7 @@ DEF=${MTSPI_DEFAULTS:-/etc/default/mtspi}
 U=${MTSPI_USER:-mtspi}
 P2P=${MTSPI_P2P_CONF:-/etc/wpa_supplicant/mtspi-p2p.conf}
 SUDOERS=${MTSPI_SUDOERS:-/etc/sudoers.d/mtspi-remote}
+NMSTATE=${MTSPI_NM_STATE:-/var/lib/NetworkManager/NetworkManager.state}
 log() { echo "setup file: $*"; }
 
 # put FILE KEY LINE: FILE keeps a single line for KEY (the new LINE). The file is rebuilt aside and swapped in,
@@ -58,7 +59,7 @@ if [ -n "$COUNTRY" ]; then
     # a fresh Raspberry Pi OS also keeps Wi-Fi switched off inside NetworkManager until a country is chosen:
     # without this the home network is saved but never joined. Asked only when it is off: early in the boot
     # NetworkManager answers when it has finished starting, and this script stood still for 12 s (17 Nov 2026)
-    grep -qs '^WirelessEnabled=true' /var/lib/NetworkManager/NetworkManager.state || nmcli radio wifi on >/dev/null 2>&1 || true
+    grep -qs '^WirelessEnabled=true' "$NMSTATE" || nmcli radio wifi on >/dev/null 2>&1 || true
 fi
 
 # home Wi-Fi: saved as a NetworkManager network; the Wi-Fi mode service goes back to it when the bike is away

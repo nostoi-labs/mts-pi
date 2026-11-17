@@ -4,12 +4,14 @@ set -u
 cd "$(dirname "$0")/.."
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin" "$T/home"
-for c in nmcli iw rfkill systemctl chown; do printf '#!/bin/sh\necho "%s $*" >> "%s/calls"\nexit 0\n' "$c" "$T" > "$T/bin/$c"; chmod +x "$T/bin/$c"; done
+for c in nmcli iw rfkill chown; do printf '#!/bin/sh\necho "%s $*" >> "%s/calls"\nexit 0\n' "$c" "$T" > "$T/bin/$c"; chmod +x "$T/bin/$c"; done
+# systemctl: "is-enabled" says no until "enable" has been called, as on a card that has never had SSH switched on
+printf '#!/bin/sh\necho "systemctl $*" >> "%s/calls"\ncase "$1" in is-enabled) [ -e "%s/ssh_enabled" ]; exit $? ;; enable) : > "%s/ssh_enabled" ;; esac\nexit 0\n' "$T" "$T" "$T" > "$T/bin/systemctl"; chmod +x "$T/bin/systemctl"
 printf '#!/bin/sh\necho "tester:x:1000:1000::%s/home:/bin/sh"\n' "$T" > "$T/bin/getent"; chmod +x "$T/bin/getent"
 printf '#!/bin/sh\nfor a in "$@"; do last=$a; done\nmkdir -p "$last"\n' > "$T/bin/install"; chmod +x "$T/bin/install"
 fail=0
 check() { if eval "$2"; then echo "OK   $1"; else echo "FAIL $1"; fail=1; fi; }
-run() { PATH="$T/bin:$PATH" MTSPI_SETUP_FILE="$T/mtspi.txt" MTSPI_DEFAULTS="$T/defaults" MTSPI_USER=tester MTSPI_P2P_CONF="$T/p2p.conf" MTSPI_SUDOERS="$T/sudoers" bash system/setup-file.sh > "$T/out" 2>&1; }
+run() { PATH="$T/bin:$PATH" MTSPI_SETUP_FILE="$T/mtspi.txt" MTSPI_DEFAULTS="$T/defaults" MTSPI_USER=tester MTSPI_P2P_CONF="$T/p2p.conf" MTSPI_SUDOERS="$T/sudoers" MTSPI_NM_STATE="$T/nm.state" bash system/setup-file.sh > "$T/out" 2>&1; }
 
 # 1. the template as shipped: nothing happens
 cp system/mtspi.txt "$T/mtspi.txt"; : > "$T/calls"; : > "$T/defaults"
@@ -29,7 +31,7 @@ check "home Wi-Fi saved with the exact name and password" 'grep -q "ssid My Home
 check "password removed from the file" '! grep -q "pa ss" "$T/mtspi.txt" && grep -q "^WIFI_PASSWORD=" "$T/mtspi.txt"'
 check "name left in the file" 'grep -q "My Home Net" "$T/mtspi.txt"'
 check "SSH key installed once" '[ "$(grep -c AAAATESTKEY "$T/home/.ssh/authorized_keys")" = 1 ]'
-check "SSH turned on" 'grep -q "^systemctl enable --now ssh" "$T/calls"'
+check "SSH turned on, without waiting for it to start" 'grep -q "^systemctl enable ssh" "$T/calls" && grep -q "^systemctl --no-block start ssh" "$T/calls" && ! grep -q "enable --now" "$T/calls"'
 
 # 3. second start with the same file: Wi-Fi is not added again, the key is not duplicated, country still applied
 : > "$T/calls"
@@ -37,6 +39,7 @@ run
 check "second start: Wi-Fi not added again" '! grep -q "connection add" "$T/calls"'
 check "second start: key not duplicated" '[ "$(grep -c AAAATESTKEY "$T/home/.ssh/authorized_keys")" = 1 ]'
 check "second start: country applied again" 'grep -q "^iw reg set IT" "$T/calls"'
+check "second start: SSH not enabled again, started without waiting" '! grep -q "^systemctl enable ssh" "$T/calls" && grep -q "^systemctl --no-block start ssh" "$T/calls"'
 
 # 4. no file at all: the remembered country is still applied
 rm "$T/mtspi.txt"; : > "$T/calls"
@@ -47,14 +50,20 @@ check "no file: remembered country applied" 'grep -q "^iw reg set IT" "$T/calls"
 printf 'WIFI_COUNTRY=Italy\nSSH_KEY=hello\n' > "$T/mtspi.txt"; : > "$T/calls"; : > "$T/defaults"
 run
 check "bad country ignored" '! grep -q WIFI_COUNTRY "$T/defaults"'
-check "bad key ignored" '! grep -q "enable --now ssh" "$T/calls"'
+check "bad key ignored" '! grep -q "start ssh" "$T/calls" && ! grep -q "enable ssh" "$T/calls"'
 
 # 6. settings damaged by an abrupt restart (zero bytes before the line, as seen on the first real start of a card)
 #    and Wi-Fi switched off inside NetworkManager
 printf 'CARLINKIT=usb\n\000\000\000\000WIFI_COUNTRY=IT\nWIFI_COUNTRY=IT\n' > "$T/defaults"
 printf 'WIFI_COUNTRY=IT\n' > "$T/mtspi.txt"; : > "$T/calls"
+printf '[main]\nNetworkingEnabled=true\nWirelessEnabled=false\n' > "$T/nm.state"
 run
 check "damaged settings: zero bytes removed" '[ "$(tr -d "\000" < "$T/defaults" | wc -c)" = "$(wc -c < "$T/defaults")" ]'
 check "damaged settings: one country line, other settings kept" '[ "$(grep -c WIFI_COUNTRY "$T/defaults")" = 1 ] && grep -qx "CARLINKIT=usb" "$T/defaults"'
 check "Wi-Fi switched on in NetworkManager" 'grep -q "^nmcli radio wifi on" "$T/calls"'
+
+# 7. Wi-Fi already on inside NetworkManager: it is not asked again (early in the boot the question took 12 s)
+printf '[main]\nNetworkingEnabled=true\nWirelessEnabled=true\n' > "$T/nm.state"; : > "$T/calls"
+run
+check "NetworkManager not asked when Wi-Fi is already on" '! grep -q "^nmcli radio" "$T/calls" && grep -q "^iw reg set IT" "$T/calls"'
 [ "$fail" = 0 ] && echo "ALL OK" || { echo "SOME FAILED"; cat "$T/out"; exit 1; }
