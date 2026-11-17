@@ -1206,7 +1206,7 @@ class Bridge:
                 await asyncio.sleep(10)
 
     async def pull_sms(self, mac, adapter=None):
-        """Messages from the iPhone (MAP). Without "Show Notifications" the iPhone answers Forbidden (0x43): retry slowly.
+        """Messages from the iPhone (MAP). Without "Show Message Notifications" the iPhone answers Forbidden (0x43): retry slowly.
         Then re-read on every new message (MNS) and in any case every 5 minutes."""
         from mtspi import mns
         wait = 10

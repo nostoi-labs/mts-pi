@@ -1,6 +1,6 @@
 """MAP MNS server (Message Notification Server) towards the iPhone, and message reading with obexd (MAP client).
 
-Why it is needed: the iPhone exposes messages (MAP) only if "Show Notifications" is enabled in the device's
+Why it is needed: the iPhone exposes messages (MAP) only if "Show Message Notifications" is enabled in the device's
 Bluetooth settings, and that switch appears only if the accessory publishes the MNS service (0x1133).
 The obexd of Raspberry Pi OS (BlueZ 5.82) does not register its servers with BlueZ, so we publish the record ourselves
 with an RFCOMM profile and answer the minimal OBEX (Connect, Put of event reports, Disconnect).

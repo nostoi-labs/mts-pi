@@ -203,9 +203,14 @@ the bike, standing still, with the Pi powered.
    | ![Bluetooth in the settings menu](docs/photos/pairing-1-bluetooth-menu.jpg) | ![Pairing, Phone](docs/photos/pairing-2-phone.jpg) | ![MTS Pi found](docs/photos/pairing-3-mts-pi.jpg) |
    | ![Pairing code, Accept](docs/photos/pairing-4-code.jpg) | ![Paired](docs/photos/pairing-5-paired.jpg) | ![The bike's device list](docs/photos/bluetooth-list-on-the-dashboard.jpg) |
 2. **iPhone ↔ Pi.** On the iPhone: Settings › Bluetooth › **MTS Pi**, and confirm the code the iPhone shows (the
-   Pi accepts by itself). Then tap the **(i)** next to MTS Pi and turn on **Sync Contacts** and **Show
-   Notifications**: the bike's Phone menu and the caller's name use them. The two switches appear a few seconds
-   after pairing; the phonebook reaches the Pi within a few minutes.
+   Pi accepts by itself). Then tap the **(i)** next to MTS Pi and turn on **Sync Contacts** (leave **All
+   Contacts** ticked) and **Show Message Notifications** (on some iOS versions it reads *Show Notifications*):
+   the bike's Phone menu and the caller's name use them. The two switches appear a few seconds after pairing;
+   the phonebook reaches the Pi within a few minutes.
+
+   <img src="docs/photos/iphone-bluetooth-mts-pi.png" width="300" alt="The MTS Pi page in the iPhone's Bluetooth settings, with both switches on">
+
+   *The page behind the (i) next to MTS Pi on the iPhone, with both switches on.*
 3. **iPhone ↔ Carlinkit.** In the same list pick the dongle (its name starts with **AutoKit**) and accept
    "Use CarPlay". It takes about ten seconds, once; after that CarPlay connects by itself, about ten seconds
    after the Pi has started.
