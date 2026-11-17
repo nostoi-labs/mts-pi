@@ -377,6 +377,11 @@ Logs: `journalctl -u mtspi-bridge -u mtspi-hfp -u mtspi-wifi-mode`, plus one fol
 - The socket in the tank compartment stays on for a few seconds after key-off and then cuts the power: the Pi is
   switched off abruptly every time, and the SD card is not protected against that yet. Keep a copy of the card
   once it works.
+- Summer heat has not been tried. The one evening on the bike was at 15 °C outside, and the Pi stayed between
+  27 and 41 °C in the closed tank compartment. It will be warmer in summer and we have no numbers yet; a Pi 3 A+
+  starts slowing itself down at 60 °C. Ducati makes a version of that compartment with a small fan, meant to
+  keep a phone cool: recent bikes have it, and dealers have fitted it to earlier ones. If yours has it, all the
+  better; if not, it is worth asking your dealer.
 - The files in `myspin/` are binary and built for Raspberry Pi OS 64-bit with Python 3.13 only.
 - Tested with one bike, one iPhone and one dongle.
 - The "pro" variant mentioned in the code (a second, external Bluetooth radio) is not part of this release.
