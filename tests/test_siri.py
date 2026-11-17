@@ -28,6 +28,9 @@ def test_bridge_siri_from_bike():
         await asyncio.sleep(0.01)
         assert b.dongle.sent == [ck.send_command("siri")]
         assert bike_events(b) == ["siri_start"] and b.siri_until
+        await b.bike_siri(True)                          # asked again while it is listening: nothing more is sent
+        await asyncio.sleep(b.SIRI_PRESS_S + 0.1)        # a short press: the release follows (alone, Siri never answers)
+        assert b.dongle.sent == [ck.send_command("siri"), ck.send_command("siriRelease")]
         await audio_cmd(b, "siri_start")                 # the Carlinkit confirms: Siri is listening
         assert b.siri_until - asyncio.get_running_loop().time() < b.SIRI_MAX_S + 1
         await audio_cmd(b, "siri_stop")

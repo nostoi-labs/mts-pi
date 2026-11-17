@@ -17,17 +17,36 @@ from test_carplay_call import make_bridge  # noqa: E402
 
 
 def test_up_held_is_back():
-    sent, menu = [], []
-    b = types.SimpleNamespace(carplay_key=sent.append, launcher=types.SimpleNamespace(on_key=menu.append))
+    sent, menu, siri = [], [], []
+    b = types.SimpleNamespace(carplay_key=sent.append, launcher=types.SimpleNamespace(on_key=menu.append),
+                              bike_siri=lambda on: siri.append(on), spawn=lambda asked: None)
     d = br.Display(b)
     d.mode = "carplay"
-    for key, action in [("UP", "PRESS"), ("UP", "LONG_PRESS"), ("UP", "RELEASE"),          # held: up, then Back
-                        ("DOWN", "PRESS"), ("DOWN", "LONG_PRESS"), ("DOWN", "RELEASE"),    # held: not repeated
-                        ("UP", "PRESS"), ("UP", "RELEASE"),                                # short: just up
-                        ("LEFT", "PRESS"), ("LEFT", "RELEASE"), ("OK", "PRESS"), ("OK", "RELEASE")]:
-        d.on_key(key, action)
-    assert sent == ["UP", "BACK", "DOWN", "UP", "LEFT", "OK"], sent
-    assert menu == [] and d.key_count == 12
+    events = [("UP", "PRESS"), ("UP", "LONG_PRESS"), ("UP", "RELEASE"),          # held: Back alone, no step up first
+              ("DOWN", "PRESS"), ("DOWN", "LONG_PRESS"), ("DOWN", "RELEASE"),    # held: Siri where it is on, no step down
+              ("UP", "PRESS"), ("UP", "RELEASE"),                                # short: up, when released
+              ("DOWN", "PRESS"), ("DOWN", "RELEASE"),                            # short: down, when released
+              ("LEFT", "PRESS"), ("LEFT", "RELEASE"), ("OK", "PRESS"), ("OK", "RELEASE"),
+              ("LEFT", "LONG_PRESS"), ("UP", "CLICK")]                           # other holds are dropped, a click passes
+    was = br.SIRI_ENABLED
+    try:
+        br.SIRI_ENABLED = True
+        for key, action in events:
+            d.on_key(key, action)
+        assert sent == ["BACK", "UP", "DOWN", "LEFT", "OK", "UP"], sent
+        assert menu == [] and d.key_count == len(events)
+        assert siri == [True], siri                 # DOWN held asks for Siri once (17 Nov 2026)
+        br.SIRI_ENABLED = False                     # as shipped until Siri has been tried on the bike
+        del sent[:], siri[:]
+        for key, action in events[3:6]:
+            d.on_key(key, action)
+        assert sent == [] and siri == [], (sent, siri)
+        d.mode = "home"                             # the Pi's home screen: every press goes to the menu, releases do not
+        for key, action in [("DOWN", "PRESS"), ("DOWN", "RELEASE"), ("OK", "PRESS"), ("OK", "RELEASE")]:
+            d.on_key(key, action)
+        assert menu == ["DOWN", "OK"] and sent == [], (menu, sent)
+    finally:
+        br.SIRI_ENABLED = was
 
 
 class FakeReader:
@@ -148,6 +167,20 @@ def test_spawned_task_survives_garbage_collection():
         gc.collect()
         assert ref() is None or ref().done()
     asyncio.run(main())
+
+
+def test_default_key_map_one_step_and_wheel():
+    """17 Nov 2026, bench: up/down must be the knob tilted (113/114: one row in a list, one row of icons in the grid),
+    never 102/103 (a page: the "lists jump" of 16 Nov on the bike); left/right the wheel (100/101), the only codes that
+    reach the buttons on the map in Apple Maps."""
+    from mtspi import carlinkit as ck
+    assert ck.DEFAULT_KEYMAP == os.environ.get("CARPLAY_KEYMAP", "joy")
+    m = ck.KEYMAPS["joy"]
+    code = lambda key: [ck.CMD[name] for name in m[key]]
+    assert code("UP") == [113, 105] and code("DOWN") == [114, 105]
+    assert code("LEFT") == [100, 105] and code("RIGHT") == [101, 105]
+    assert code("OK") == [104, 105] and code("BACK") == [106]
+    assert ck.CMD["siri"] == 5 and ck.CMD["siriRelease"] == 6
 
 
 if __name__ == "__main__":

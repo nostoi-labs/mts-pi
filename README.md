@@ -229,8 +229,10 @@ disconnecting the iPhone in the bike's Bluetooth menu brings it back.
    100 s after key-on in our tests on the bike.
 2. Open **Ducati Connect** on the dashboard: the Pi's home screen appears, and CarPlay starts by itself (you can
    turn that off in the settings).
-3. In CarPlay the joystick moves the selection and the centre press selects. **Hold the joystick up for one
-   second to go back** one level. The red **M** icon among the apps (or your own picture, see
+3. In CarPlay the joystick **up and down** moves the selection one step in that direction; **left and right** go
+   to the previous and the next item, like the wheel of a car's controller (in a map application that is how
+   you reach the buttons on the map, while up and down move the map); the centre press selects. **Hold the
+   joystick up for one second to go back** one level. The red **M** icon among the apps (or your own picture, see
    [Settings](#settings)) brings you back to the Pi's home screen. Holding the joystick left is the bike's own
    way out of Ducati Connect.
 4. Calls ring on the dashboard with the caller's name; answer and hang up from the bike or from the helmet.
@@ -248,7 +250,7 @@ you leave Ducati Connect, and picture quality (three steps: higher quality means
 | Function | State | How |
 |---|---|---|
 | CarPlay on the dashboard | **bike** | Carlinkit over USB → H.264 decoded on the Pi → JPEG frames over Wi-Fi |
-| Joystick in CarPlay | **bike** | arrows and OK sent to the dongle as CarPlay keys; joystick held up = back |
+| Joystick in CarPlay | **bike**; the moves of 17 Nov 2026 on the bench | sent to the dongle as CarPlay's controller: up/down = the knob tilted, left/right = the wheel, centre = select; joystick held up = back |
 | Music in the helmet | **bike** | CarPlay audio → A2DP |
 | A call placed from CarPlay, closed from the bike | **bike** | the dongle's audio commands → HFP towards the bike, microphone back to CarPlay |
 | Incoming calls, answer from the bike or the helmet | bench | the same path; the bike rings through HFP |
@@ -258,7 +260,7 @@ you leave Ducati Connect, and picture quality (three steps: higher quality means
 | Battery and signal on the home screen | bench | the iPhone's HFP indicators |
 | The Pi's home screen in Ducati Connect, joystick | **bike** | first tried on the Multistrada on 24 Oct 2026 |
 | Text messages on the bike | not applicable | the Multistrada's dashboard has no function for messages |
-| Siri | not yet | on the bike Siri started but did not hear the helmet microphone |
+| Siri from the helmet, started by holding the joystick down | bench, switched off in the card image | the dongle's "voice button" pressed and released → the Pi opens the voice channel to the bike without a call → helmet microphone to CarPlay. Not tried on the bike yet: `HFP_VR=1` in `/etc/default/mtspi` switches it on |
 
 "Bike" means: tried on the Multistrada V4 S on 16 Nov 2026, with the ready-made card. "Bench" means: real Pi,
 real Carlinkit, real iPhone, a helmet intercom playing the part of the bike's Bluetooth, an emulated dashboard
@@ -329,6 +331,16 @@ Notes for anyone building something similar. Each of these cost an evening or mo
 - **The real joystick is not the emulated one.** Left, right and centre arrive as clicks only; up and down arrive
   as press, long press after about 0.9 s, and release; holding left belongs to the bike, and a held centre press
   never arrives. Back, which the emulated dashboard had as a key, became "hold up".
+- **CarPlay without a touch screen expects a knob with three gestures.** Turning it goes to the previous or the
+  next item; tilting it moves one step in a direction, or pans the map in a map application; pressing it selects.
+  On the dongle these are different commands, and we found which is which only by sending each one and looking
+  at the screen: 100/101 are the wheel, 111–114 the knob tilted, 102/103 move by a page (in a list they jump
+  many rows: our "lists that jump"). A four-way joystick has to pick: ours gives up and down to the tilt and
+  left and right to the wheel, because the wheel is the only way to the buttons on the map.
+- **Siri's button has a press and a release.** Sending only "voice button pressed" makes Siri listen for as long
+  as the button is "held": the animation follows your voice and no answer ever comes. With the release a moment
+  later Siri ends the listening by itself. And a helmet intercom sends "pause" when the voice channel opens:
+  passed on to CarPlay, that closed Siri after a second.
 - **A card you cannot reach can still tell you what happened.** The small `bootfs` partition is readable from any
   computer: a script started from `cmdline.txt` copied the logs there, and that is how the two problems above
   were found without a screen, a keyboard or a network.
@@ -369,9 +381,12 @@ Logs: `journalctl -u mtspi-bridge -u mtspi-hfp -u mtspi-wifi-mode`, plus one fol
   bike yet.
 - If the iPhone is still in the bike's list of devices, at key-on the bike may connect to it instead of the Pi:
   disconnect it in the bike's Bluetooth menu (see [Pairing](#pairing)).
-- Siri does not hear the helmet microphone yet.
-- In CarPlay's long lists (the contacts in Phone, for example) one move of the joystick jumps over many rows
-  instead of going to the next one. Everywhere else it moves one step at a time. We do not know why yet.
+- Siri from the helmet works on the bench (joystick held down) and is switched off in the card image until it has
+  been tried on the bike: we do not know yet whether the real dashboard passes the helmet microphone on when
+  there is no call. `HFP_VR=1` in `/etc/default/mtspi` switches it on.
+- The joystick's moves in CarPlay changed on 17 Nov 2026 (lists move one row at a time, the buttons on the map can
+  be reached): tried on the bench in the app grid, the contacts, Apple Maps and Google Maps, not on the bike yet.
+  Left and right no longer change track on the "Now Playing" screen: they move between its buttons.
 - The joystick has no Back key and its centre press cannot be held (the dashboard does not pass that on): Back is
   the joystick held up. Leaving Ducati Connect with the joystick held left also takes CarPlay one step back.
 - The socket in the tank compartment stays on for a few seconds after key-off and then cuts the power: the Pi is
@@ -394,14 +409,14 @@ wrong or missing, then the rest.
 | | What | Why |
 |---|---|---|
 | 1 | **Steady on the bike**: find why the link to the dashboard dropped once, come back from a drop in seconds without the key, keep the bike from picking the iPhone at key-on | the first evening on the bike worked, with one drop |
-| 2 | **Joystick in lists**: one row at a time in CarPlay's long lists (contacts, recent calls) | today one move jumps over many rows |
-| 3 | **Siri** with the helmet microphone, started by holding the joystick down (holding it up is already Back) | hands stay on the bars |
+| 2 | **Siri on the bike**: it works on the bench with the joystick held down; try it with the real dashboard, then switch it on in the card image | hands stay on the bars |
+| 3 | **The new joystick moves on the bike** (one row at a time in lists, the wheel on left and right) | tried on the bench only |
 | 4 | **Status light**: the Pi's LED tells you when it is ready to pair and when something is wrong | the ready-made card has no screen to look at |
 | 5 | **SD card protection**: a read-only system | the bike cuts the power without warning |
 | 6 | **Leaner system**: everything the Pi does not need is turned off | faster start, less power, less heat |
 | 7 | **Updates** without writing the card again | no new pairing at every update |
 | 8 | **Automatic recovery** after a Bluetooth radio error | today it takes key off and on |
-| 9 | Incoming calls and the caller's name checked on the bike, the name under the CarPlay icon, finer joystick moves in the app grid, the card's time zone (today the logs are on London time) | details |
+| 9 | Incoming calls and the caller's name checked on the bike, the name under the CarPlay icon, the card's time zone (today the logs are on London time) | details |
 
 Later: the "pro" variant with a second radio, and tyre pressure and temperature from Bluetooth valve sensors on
 the home screen.
@@ -426,6 +441,8 @@ the home screen.
 - 16 Nov 2026, evening — on the bike with that card: pairing from scratch, CarPlay on the dashboard for a ride,
   music, a call; Back added to the joystick on the spot, and at home the logs showed why CarPlay had not come
   back by itself after a drop
+- 17 Nov 2026 — on the bench: Siri hears the helmet and answers, and the eight movement commands of the dongle
+  tried one by one, which gave the joystick its present moves
 
 ## Repository layout
 

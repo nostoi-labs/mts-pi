@@ -56,8 +56,9 @@ if [ -n "$COUNTRY" ]; then
     iw reg set "$COUNTRY" 2>/dev/null || true
     rfkill unblock wlan 2>/dev/null || true
     # a fresh Raspberry Pi OS also keeps Wi-Fi switched off inside NetworkManager until a country is chosen:
-    # without this the home network is saved but never joined
-    nmcli radio wifi on >/dev/null 2>&1 || true
+    # without this the home network is saved but never joined. Asked only when it is off: early in the boot
+    # NetworkManager answers when it has finished starting, and this script stood still for 12 s (17 Nov 2026)
+    grep -qs '^WirelessEnabled=true' /var/lib/NetworkManager/NetworkManager.state || nmcli radio wifi on >/dev/null 2>&1 || true
 fi
 
 # home Wi-Fi: saved as a NetworkManager network; the Wi-Fi mode service goes back to it when the bike is away
@@ -81,11 +82,16 @@ if [ -n "$KEY" ]; then
             if [ -n "$H" ]; then
                 install -d -m 700 -o "$U" -g "$U" "$H/.ssh"
                 touch "$H/.ssh/authorized_keys"
-                grep -qxF "$KEY" "$H/.ssh/authorized_keys" || echo "$KEY" >> "$H/.ssh/authorized_keys"
+                NEW=0
+                grep -qxF "$KEY" "$H/.ssh/authorized_keys" || { echo "$KEY" >> "$H/.ssh/authorized_keys"; NEW=1; }
                 chown "$U:$U" "$H/.ssh/authorized_keys"; chmod 600 "$H/.ssh/authorized_keys"
-                echo "$U ALL=(ALL) NOPASSWD: ALL" > "$SUDOERS"; chmod 440 "$SUDOERS"
-                systemctl enable --now ssh >/dev/null 2>&1 || systemctl enable --now sshd >/dev/null 2>&1 || true
-                sync
+                [ -s "$SUDOERS" ] || { echo "$U ALL=(ALL) NOPASSWD: ALL" > "$SUDOERS"; chmod 440 "$SUDOERS"; NEW=1; }
+                # never wait for the start here: early in the boot ssh is queued behind other units, and this
+                # script, which the Wi-Fi mode waits for, stood still for 17 s (measured on 17 Nov 2026)
+                systemctl is-enabled --quiet ssh 2>/dev/null || systemctl is-enabled --quiet sshd 2>/dev/null \
+                    || systemctl enable ssh >/dev/null 2>&1 || systemctl enable sshd >/dev/null 2>&1 || true
+                systemctl --no-block start ssh >/dev/null 2>&1 || systemctl --no-block start sshd >/dev/null 2>&1 || true
+                [ "$NEW" = 0 ] || sync
                 log "remote login enabled for $U"
             fi ;;
         *) log "SSH_KEY does not look like a public key, ignored" ;;

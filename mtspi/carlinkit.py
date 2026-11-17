@@ -28,7 +28,7 @@ SEND_FILE, HEARTBEAT, SOFTWARE_VERSION = 0x99, 0xAA, 0xCC
 
 # Commands (CommandMapping)
 CMD = {
-    "invalid": 0, "startRecordAudio": 1, "stopRecordAudio": 2, "requestHostUI": 3, "siri": 5, "mic": 7,
+    "invalid": 0, "startRecordAudio": 1, "stopRecordAudio": 2, "requestHostUI": 3, "siri": 5, "siriRelease": 6, "mic": 7,
     "frame": 12, "boxMic": 15, "enableNightMode": 16, "disableNightMode": 17, "audioTransferOn": 22,
     "audioTransferOff": 23, "wifi24g": 24, "wifi5g": 25, "left": 100, "right": 101, "up": 102, "down": 103, "selectDown": 104,
     "selectUp": 105, "back": 106, "knobLeft": 111, "knobRight": 112, "knobUp": 113, "knobDown": 114, "home": 200, "play": 201, "pause": 202,
@@ -66,10 +66,20 @@ KNOB_TILT = dict(KNOB, LEFT=["knobLeft", "selectUp"], RIGHT=["knobRight", "selec
 # "mix": left/right = knob (jumps between zones, track change during playback), up/down = wheel (steps through all
 # items in sequence, reaches everything: 101 in the column moves up, 100 moves down)
 KNOB_MIX = dict(KNOB_TILT, UP=["right", "selectUp"], DOWN=["left", "selectUp"])
-KEYMAPS = {"arrows": KNOB, "tilt": KNOB_TILT, "mix": KNOB_MIX}
-# Chosen on the bench on 11 Nov 2026: "tilt" (from the column "right" enters the content; during playback left/right
-# change track and Back exits). "mix" rejected: in the grid up/down move sideways. CARPLAY_KEYMAP changes it.
-DEFAULT_KEYMAP = os.environ.get("CARPLAY_KEYMAP", "tilt")
+# Systematic test on 17 Nov 2026 (bench, snapshots after every code; home grid, Phone lists, Apple Maps while navigating):
+#   100/101 = the wheel: previous/next item in sequence, everywhere. In the grid it runs along the row and wraps to the
+#             next one; in a list it is one row; in Apple Maps it is the only way to reach the buttons on the map.
+#   102/103 = up/down by a page: in a list they jump many rows (the "lists jump" seen on the bike on 16 Nov).
+#   111-114 = the knob tilted left/right/up/down: one step in that direction (grid rows and columns, one row in a
+#             list); in a map application they pan the map instead of moving between the buttons.
+# "joy": up/down = knob tilted (one step, never a page), left/right = the wheel (reaches everything, map buttons included).
+KNOB_JOY = dict(KNOB, UP=["knobUp", "selectUp"], DOWN=["knobDown", "selectUp"])
+KEYMAPS = {"arrows": KNOB, "tilt": KNOB_TILT, "mix": KNOB_MIX, "joy": KNOB_JOY}
+# Default since 17 Nov 2026: "joy" (tried by hand in the grid, in the contacts, in Apple Maps and Google Maps while
+# navigating). Before: "tilt", chosen on 11 Nov 2026 (from the column "right" enters the content; during playback
+# left/right change track), which could not reach the map buttons and jumped in lists. "mix" rejected: in the grid
+# up/down move sideways, in lists down went up. CARPLAY_KEYMAP changes it.
+DEFAULT_KEYMAP = os.environ.get("CARPLAY_KEYMAP", "joy")
 
 FILE_DPI, FILE_NIGHT, FILE_HAND, FILE_CHARGE = "/tmp/screen_dpi", "/tmp/night_mode", "/tmp/hand_drive_mode", "/tmp/charge_mode"
 FILE_BOX_NAME = "/etc/box_name"

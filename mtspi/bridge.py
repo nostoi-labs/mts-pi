@@ -43,6 +43,10 @@ from myspin.phone import PhoneControl, PhoneProjection, discover_vehicle  # noqa
 from PIL import Image, ImageDraw  # noqa: E402
 from mtspi.tasks import spawn
 
+# Siri from the helmet (the joystick held down, the bike's phone button): works on the bench since 17 Nov 2026, not yet
+# tried on the bike, so it is off unless HFP_VR=1 (the same switch that lets the hands-free open the voice without a call).
+SIRI_ENABLED = os.environ.get("HFP_VR", "0") == "1"
+
 
 def oem_icon_png(label: str, path: str = "") -> bytes:
     """Manufacturer icon for CarPlay (256x256 PNG): the user-chosen file if present (e.g. the bike logo,
@@ -74,6 +78,7 @@ class Display:
         self.mode = "launcher"
         self.carplay_frame = None
         self.last_cp_image = None      # last CarPlay image prepared for the bike (for the snap test command)
+        self.held = None               # UP or DOWN pressed and not yet released (see on_key)
         self.carplay_seq = 0
         self.frames_sent = 0
         self.key_count = 0
@@ -106,20 +111,32 @@ class Display:
 
     def on_key(self, key, action):
         self.key_count += 1
-        if action not in ("PRESS", "CLICK", "LONG_PRESS"):
+        if action not in ("PRESS", "CLICK", "LONG_PRESS", "RELEASE"):
             return
-        if self.mode == "carplay":
-            # On the bike (16 Nov 2026) the joystick has no Back key: a long LEFT is the dashboard's own "leave Ducati
-            # Connect", a long centre press never reaches us, LEFT/RIGHT/OK arrive only as clicks. UP and DOWN are the
-            # only keys with a hold: PRESS, then LONG_PRESS after about 0.9 s, then RELEASE. So: UP held = Back.
-            # Any other LONG_PRESS is dropped (it used to repeat the key a second time).
-            if action == "LONG_PRESS":
+        if self.mode != "carplay":
+            if action != "RELEASE":
+                self.b.launcher.on_key(key)
+            return
+        # On the bike (16 Nov 2026) the joystick has no Back key: a long LEFT is the dashboard's own "leave Ducati
+        # Connect", a long centre press never reaches us, LEFT/RIGHT/OK arrive only as clicks. UP and DOWN are the
+        # only keys with a hold: PRESS, then LONG_PRESS after about 0.9 s, then RELEASE. So: UP held = Back,
+        # DOWN held = Siri (where it is switched on). UP and DOWN act when they are released: a hold is then Back
+        # or Siri alone, without first moving the selection by one step (17 Nov 2026).
+        if key in ("UP", "DOWN") and action != "CLICK":
+            if action == "PRESS":
+                self.held = key
+            elif action == "LONG_PRESS":
+                self.held = None
                 if key == "UP":
                     self.b.carplay_key("BACK")
-                return
+                elif SIRI_ENABLED:
+                    self.b.spawn(self.b.bike_siri(True))
+            elif self.held == key:                 # RELEASE of a short press
+                self.held = None
+                self.b.carplay_key(key)
+            return
+        if action in ("PRESS", "CLICK"):           # any other LONG_PRESS is dropped (it used to repeat the key)
             self.b.carplay_key(key)
-        else:
-            self.b.launcher.on_key(key)
 
     def on_frame_sent(self, size):
         self.frames_sent += 1
@@ -314,6 +331,10 @@ class Bridge:
                 if w.startswith("keymap=") and self.dongle:   # live key map: "keymap=tilt" / "keymap=arrows"
                     self.dongle.keymap = w[7:]
                     self.log("manual_keymap", keymap=w[7:])
+                    continue
+                if w == "siri":                       # Siri as the joystick held down starts it (press and release)
+                    await self.bike_siri(True)
+                    self.log("manual_cmd", code="siri")
                     continue
                 if w.startswith("wait"):              # pause in seconds: "wait0.3"
                     await asyncio.sleep(float(w[4:] or 0.3))
@@ -747,11 +768,24 @@ class Bridge:
                 self.log("siri_timeout")
                 self.siri_set(False)
 
+    SIRI_PRESS_S = 0.3   # how long CarPlay's voice button stays "pressed"
+
+    async def siri_release(self):
+        """The release that turns "voice button held" into a short press. With the press alone (code 5) Siri listens for
+        as long as the button is "held": it hears the voice and never answers (17 Nov 2026, bench). With the release
+        right after, Siri ends the listening by itself."""
+        await asyncio.sleep(self.SIRI_PRESS_S)
+        if self.dongle:
+            await self.dongle.send(ck.send_command("siriRelease"))
+
     async def bike_siri(self, on):
-        """AT+BVRA from the bike (long press of the phone button): 'siri' command to the Carlinkit."""
+        """Siri asked from our side: AT+BVRA from the bike (long press of the phone button) or the joystick held down."""
         if on and self.dongle and self.carplay_state() == "on" and not self.call:
+            if self.siri_until:                # already listening: a second request changes nothing
+                return
             await self.dongle.send(ck.send_command("siri"))
             self.siri_set(True, self.SIRI_START_S)
+            self.spawn(self.siri_release())
         else:                                  # CarPlay off, call in progress or close request
             self.siri_set(False)
 
@@ -780,6 +814,10 @@ class Bridge:
                     break
                 if kind == lp.MIC:
                     self.counts["bike_mic"] += 1
+                    if self.counts["bike_mic"] % 250 == 1:     # check: level of the helmet microphone (is a voice arriving?)
+                        peak = int(np.abs(np.frombuffer(data[: len(data) & ~1], dtype="<i2")).max()) if len(data) > 1 else 0
+                        self.log("bike_mic", n=self.counts["bike_mic"], bytes=len(data), peak=peak,
+                                 to="call" if self.call else "siri" if self.siri_until else None)
                     if self.call and self.call["state"] == "active" and not self.call.get("ending"):
                         if self.call.get("audio") == "carplay" and self.dongle:
                             await self.dongle.send(ck.send_mic(data))
@@ -1075,6 +1113,11 @@ class Bridge:
         """Bike Music button (standard variant, BlueZ player) → Carlinkit, as the ESP32 does in the pro variant. False = not sent."""
         ck_cmd = {"Play": "play", "Pause": "pause", "Next": "next", "Previous": "prev", "Stop": "pause"}.get(name)
         if not (self.dongle and self.carplay_state() == "on" and ck_cmd):
+            return False
+        if self.siri_until:
+            # Siri holds the voice channel: the intercom sends "Pause" as soon as the voice opens, and any play/pause
+            # key during Siri dismisses it after about one second (17 Nov 2026, bench with the helmet intercom)
+            self.log("music_key_ignored", asked=name, why="siri")
             return False
         if (ck_cmd == "pause" and self.cp_media.get("MediaPlayStatus") not in (1, "1", True)
                 and time.monotonic() - self._cp_audible > 1.0):

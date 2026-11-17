@@ -281,6 +281,14 @@ class BridgeState:
             if self.music_q.dropped != dropped and time.monotonic() - last_log > 5:
                 dropped, last_log = self.music_q.dropped, time.monotonic()
                 self.ag.log("hfp_bridge_music_dropped", blocks=dropped)
+            if getattr(self, "vr", False):
+                # Siri: the music stream is closed at once instead of after MUSIC_IDLE_S, and nothing reopens it while
+                # Siri is on. The intercom gives its microphone only some time after the voice channel opens
+                # (1.3 to 2.8 s on 17 Nov 2026): what is said before that is lost.
+                if self.music_proc is not None:
+                    self._close_music()
+                    self.ag.log("hfp_bridge_music_idle", why="siri")
+                continue
             if pcm is None:
                 if self.music_proc is not None and time.monotonic() - last_pcm > self.MUSIC_IDLE_S:
                     # pause: pw-cat is closed, so A2DP to the bike goes to SUSPEND and on Play restarts with START.
@@ -323,6 +331,8 @@ class BridgeState:
             self.calls = []
         elif ev in ("siri_start", "siri_stop") and VR_ENABLED:
             self.vr = ev == "siri_start"
+            if self.vr:
+                self.music_q.put(b"")              # wakes the "music" thread: it closes the stream without waiting
         states = [c["state"] for _, c in self.calls]
         self.ind["call"] = 1 if "active" in states else 0
         self.ind["callsetup"] = 1 if "incoming" in states else 2 if "dialing" in states else 0
@@ -711,6 +721,8 @@ class HfpAg:
                 if not data:
                     return
                 now = time.monotonic()
+                if not rx_bytes:                            # how long the bike or the intercom takes to give its microphone
+                    link.log("hfp_ag_voice_first", after_ms=round((now - rx_t0) * 1000))
                 gap_max = max(gap_max, now - last)
                 last = now
                 n = len(data)

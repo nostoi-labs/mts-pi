@@ -1,7 +1,9 @@
 [Unit]
 Description=MTS Pi: home screen on the dashboard (mySPIN), CarPlay and the Bluetooth bridge iPhone -> bike
 # does not wait for mtspi-adapters (slow reconnections): radio names and classes arrive in parallel
-After=bluetooth.service ofono.service user@@UID@.service
+# The user session (its bus is needed later, for the phonebook) is wanted but not waited for: waiting for it held the
+# start back by about ten seconds (17 Nov 2026). The hands-free service, which plays the music, still waits for it.
+After=bluetooth.service ofono.service
 Wants=user@@UID@.service
 # if bluetoothd restarts, profiles and the pairing agent must be registered again
 PartOf=bluetooth.service
