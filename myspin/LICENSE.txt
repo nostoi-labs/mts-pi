@@ -1,6 +1,6 @@
 The files in this folder are distributed in binary form only.
 
-Copyright (c) 2026 Vinci. All rights reserved.
+Copyright (c) 2026 Vincenzo Risi (Nostoi). All rights reserved.
 
 You may use these files free of charge for personal, non-commercial purposes: on your own motorcycle, for
 study, in a hobby project. You may pass them on unmodified for the same purposes, together with this notice.
