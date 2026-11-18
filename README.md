@@ -235,6 +235,8 @@ disconnecting the iPhone in the bike's Bluetooth menu brings it back.
    joystick up for one second to go back** one level. The red **M** icon among the apps (or your own picture, see
    [Settings](#settings)) brings you back to the Pi's home screen. Holding the joystick left is the bike's own
    way out of Ducati Connect.
+
+   ![The joystick in CarPlay: what a press and a one-second hold do](docs/joystick.svg)
 4. Calls ring on the dashboard with the caller's name; answer and hang up from the bike or from the helmet.
 5. Leave Ducati Connect whenever you want: music and calls keep going.
 6. If the dashboard says "Ducati Connect may have a connection problem" and CarPlay does not come back within a

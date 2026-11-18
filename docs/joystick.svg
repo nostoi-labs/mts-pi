@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 476" width="920" height="476" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-label="The joystick in CarPlay: what a press and a one-second hold do in each direction">
+<rect x="0" y="0" width="920" height="476" rx="14" fill="#0b0b0d"/>
+<text x="32" y="44" fill="#ffffff" font-size="20" font-weight="600">The joystick in CarPlay</text>
+<circle cx="138" cy="236" r="84" fill="#141416" stroke="#3a3a3f" stroke-width="2"/>
+<polygon points="138,169 123,190 153,190" fill="#ffffff"/>
+<polygon points="138,303 123,282 153,282" fill="#ffffff"/>
+<polygon points="71,236 92,221 92,251" fill="#ffffff"/>
+<polygon points="205,236 184,221 184,251" fill="#ffffff"/>
+<circle cx="138" cy="236" r="19" fill="#3a3a3f" stroke="#a1a1a6" stroke-width="2"/>
+<text x="138" y="350" fill="#a1a1a6" font-size="14" text-anchor="middle">left handlebar,</text>
+<text x="138" y="368" fill="#a1a1a6" font-size="14" text-anchor="middle">four directions and a centre press</text>
+<text x="360" y="84" fill="#a1a1a6" font-size="14" font-weight="600" letter-spacing="0.5">PRESS</text>
+<text x="556" y="84" fill="#a1a1a6" font-size="14" font-weight="600" letter-spacing="0.5">HOLD FOR ONE SECOND</text>
+<line x1="270" y1="98" x2="888" y2="98" stroke="#3a3a3f" stroke-width="1"/>
+<text x="270" y="136" fill="#ffffff" font-size="17" font-weight="600">Up</text>
+<text x="360" y="136" fill="#ffffff" font-size="17">one step up</text>
+<text x="556" y="136" fill="#FF9E0A" font-size="17" font-weight="600">Back</text>
+<line x1="270" y1="158" x2="888" y2="158" stroke="#3a3a3f" stroke-width="1"/>
+<text x="270" y="196" fill="#ffffff" font-size="17" font-weight="600">Down</text>
+<text x="360" y="196" fill="#ffffff" font-size="17">one step down</text>
+<text x="556" y="187" fill="#FF9E0A" font-size="17" font-weight="600">Siri</text>
+<text x="556" y="207" fill="#a1a1a6" font-size="13">off in the card image for now</text>
+<line x1="270" y1="218" x2="888" y2="218" stroke="#3a3a3f" stroke-width="1"/>
+<text x="270" y="256" fill="#ffffff" font-size="17" font-weight="600">Left</text>
+<text x="360" y="256" fill="#ffffff" font-size="17">previous item</text>
+<text x="556" y="256" fill="#63D1FF" font-size="17" font-weight="600">leaves Ducati Connect</text>
+<line x1="270" y1="278" x2="888" y2="278" stroke="#3a3a3f" stroke-width="1"/>
+<text x="270" y="316" fill="#ffffff" font-size="17" font-weight="600">Right</text>
+<text x="360" y="316" fill="#ffffff" font-size="17">next item</text>
+<text x="556" y="316" fill="#63D1FF" font-size="17" font-weight="600">the bike's volume *</text>
+<line x1="270" y1="338" x2="888" y2="338" stroke="#3a3a3f" stroke-width="1"/>
+<text x="270" y="376" fill="#ffffff" font-size="17" font-weight="600">Centre</text>
+<text x="360" y="376" fill="#ffffff" font-size="17">select</text>
+<text x="556" y="376" fill="#a1a1a6" font-size="17" font-weight="600">nothing: it does not reach the Pi</text>
+<line x1="270" y1="398" x2="888" y2="398" stroke="#3a3a3f" stroke-width="1"/>
+<rect x="270" y="417" width="12" height="12" rx="3" fill="#FF9E0A"/><text x="290" y="428" fill="#a1a1a6" font-size="13">done by MTS Pi</text>
+<rect x="410" y="417" width="12" height="12" rx="3" fill="#63D1FF"/><text x="430" y="428" fill="#a1a1a6" font-size="13">done by the bike itself</text>
+<text x="270" y="452" fill="#a1a1a6" font-size="13">* Ducati's own shortcut to the volume, as Ducati describes it; we have not tried it yet</text>
+</svg>
