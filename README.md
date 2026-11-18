@@ -284,10 +284,9 @@ for the screen link, Wi-Fi on 2.4 GHz as on the bike.
 | The same during a call | 18–19 frames per second | bench, 10 Nov 2026 |
 | Bridge start → CarPlay connected | 4.5–8 s | bench |
 | The same on a freshly written card | 8.5–9 s | bench, 16 Nov 2026 |
-| First start of a ready-made card: power-on → CarPlay | about 2 min (slow Class 4 card; 1 min 54 s with the current image) | bench, 16 Nov 2026 |
+| First start of a ready-made card: power-on → CarPlay | about 2 min (slow Class 4 card; 1 min 42 s with the image of 18 Nov 2026) | bench, 16 and 18 Nov 2026 |
 | The same → home Wi-Fi and remote login | about 2.5 min (2 min 38 s with the current image) | bench, 16 Nov 2026 |
-| Later starts of that card: power-on → our program running | 30 s with the leaner system (40 s before), slow Class 4 card | bench, 18 Nov 2026 |
-| The same → CarPlay | 47–51 s (48–66 s before): most of what is left is the iPhone finding the dongle | bench, 18 Nov 2026 |
+| Later starts of that card: power-on → CarPlay | about 50 s with the leaner system (47–51 s in five starts; 48 and 66 s before). Our program is running after 29–41 s: on a card this slow the same start varies by ten seconds from one time to the next | bench, 18 Nov 2026 |
 | Memory the system sees, running services | 462 MB and 18 with the leaner system (415 MB and 21 before) | bench, 18 Nov 2026 |
 | Ring with the caller's name | 0.7 s | bench, 10 Nov 2026 |
 | Answer from the helmet → voice open | 0.15–0.2 s | bench |
@@ -424,9 +423,6 @@ wrong or missing, then the rest.
 | 7 | **Updates** without writing the card again | no new pairing at every update |
 | 8 | **Automatic recovery** after a Bluetooth radio error | today it takes key off and on |
 | 9 | Incoming calls and the caller's name checked on the bike, the name under the CarPlay icon, the card's time zone (today the logs are on London time) | details |
-
-Later: the "pro" variant with a second radio, and tyre pressure and temperature from Bluetooth valve sensors on
-the home screen.
 
 ## Our build
 
