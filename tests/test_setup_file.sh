@@ -34,8 +34,9 @@ check "SSH key installed once" '[ "$(grep -c AAAATESTKEY "$T/home/.ssh/authorize
 check "SSH turned on, without waiting for it to start" 'grep -q "^systemctl enable ssh" "$T/calls" && grep -q "^systemctl --no-block start ssh" "$T/calls" && ! grep -q "enable --now" "$T/calls"'
 
 # 3. second start with the same file: Wi-Fi is not added again, the key is not duplicated, country still applied
-: > "$T/calls"
+: > "$T/calls"; before=$(ls -i "$T/defaults" "$T/p2p.conf")
 run
+check "second start: settings files not written again" '[ "$(ls -i "$T/defaults" "$T/p2p.conf")" = "$before" ]'
 check "second start: Wi-Fi not added again" '! grep -q "connection add" "$T/calls"'
 check "second start: key not duplicated" '[ "$(grep -c AAAATESTKEY "$T/home/.ssh/authorized_keys")" = 1 ]'
 check "second start: country applied again" 'grep -q "^iw reg set IT" "$T/calls"'
@@ -66,4 +67,21 @@ check "Wi-Fi switched on in NetworkManager" 'grep -q "^nmcli radio wifi on" "$T/
 printf '[main]\nNetworkingEnabled=true\nWirelessEnabled=true\n' > "$T/nm.state"; : > "$T/calls"
 run
 check "NetworkManager not asked when Wi-Fi is already on" '! grep -q "^nmcli radio" "$T/calls" && grep -q "^iw reg set IT" "$T/calls"'
+# 8. Siri: switched on once (the two services are restarted without waiting), nothing done when already set,
+#    switched off again, nonsense ignored
+printf 'CARLINKIT=usb\n' > "$T/defaults"; printf 'SIRI=On\r\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "Siri on: stored, services restarted without waiting" 'grep -qx "HFP_VR=1" "$T/defaults" && grep -qx "CARLINKIT=usb" "$T/defaults" && grep -q "^systemctl --no-block try-restart mtspi-bridge.service mtspi-hfp.service" "$T/calls"'
+: > "$T/calls"
+run
+check "Siri on, second start: nothing restarted" '! grep -q "try-restart" "$T/calls" && [ "$(grep -c HFP_VR "$T/defaults")" = 1 ]'
+printf 'SIRI=off\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "Siri off: stored, services restarted" 'grep -qx "HFP_VR=0" "$T/defaults" && [ "$(grep -c HFP_VR "$T/defaults")" = 1 ] && grep -q "try-restart" "$T/calls"'
+printf 'SIRI=maybe\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "Siri: nonsense ignored" 'grep -qx "HFP_VR=0" "$T/defaults" && ! grep -q "try-restart" "$T/calls"'
+printf 'SIRI=\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "Siri: empty line leaves the setting alone" 'grep -qx "HFP_VR=0" "$T/defaults" && ! grep -q "try-restart" "$T/calls"'
 [ "$fail" = 0 ] && echo "ALL OK" || { echo "SOME FAILED"; cat "$T/out"; exit 1; }

@@ -1,0 +1,15 @@
+[Unit]
+Description=MTS Pi: once the first start is over, Raspberry Pi OS's first-start setup (cloud-init) is switched off
+# cloud-init applies the settings chosen in Raspberry Pi Imager at the first start; after that it only makes every
+# start slower (remote login waits for it). This unit belongs to cloud-init's own target, so it runs only while
+# cloud-init is still on, after its last stage; from the next start on neither of them runs.
+# (Not under multi-user.target: cloud-init's last stage starts after that target, and the two would wait for each other.)
+After=cloud-final.service
+ConditionPathExists=!/etc/cloud/cloud-init.disabled
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'touch /etc/cloud/cloud-init.disabled && sync'
+
+[Install]
+WantedBy=cloud-init.target

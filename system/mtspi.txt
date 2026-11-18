@@ -13,3 +13,7 @@ WIFI_PASSWORD=
 # Your SSH public key (one line, starting with ssh-ed25519 or ssh-rsa). It turns on remote login as user
 # "mtspi", with administrator rights:  ssh mtspi@mts-pi.local
 SSH_KEY=
+
+# Siri from the helmet: in CarPlay, hold the joystick down for one second. Experimental: it works on our bench
+# and has not been proven on the road yet. Write on to try it, off to switch it off again.
+SIRI=

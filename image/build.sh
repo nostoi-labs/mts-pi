@@ -60,7 +60,7 @@ echo "== self-test of the settings-file script inside the image"
 chroot "$ROOT" /bin/bash -c "cd /opt/mts-pi && bash tests/test_setup_file.sh"
 
 echo "== what the image contains"
-chroot "$ROOT" /bin/bash -c "id mtspi; systemctl is-enabled ofono mtspi-adapters mtspi-hfp mtspi-wifi-mode mtspi-btcentral mtspi-bridge | tr '\n' ' '; echo; ls /var/lib/systemd/linger; cat /etc/default/mtspi; cd /opt/mts-pi && .venv/bin/python -c 'import mtspi.bridge, mtspi.hfp_ag, myspin.phone; print(\"program loads:\", myspin.phone.__file__)'; ls -l /boot/firmware/mtspi.txt; cat /etc/hostname; df -h / | tail -1"
+chroot "$ROOT" /bin/bash -c "id mtspi; systemctl is-enabled ofono mtspi-adapters mtspi-hfp mtspi-wifi-mode mtspi-btcentral mtspi-bridge | tr '\n' ' '; echo; ls /var/lib/systemd/linger; cat /etc/default/mtspi; cd /opt/mts-pi && .venv/bin/python -c 'import mtspi.bridge, mtspi.hfp_ag, myspin.phone; print(\"program loads:\", myspin.phone.__file__)'; ls -l /boot/firmware/mtspi.txt; cat /etc/hostname; df -h / | tail -1; systemctl is-enabled mtspi-firstboot userconfig cron 2>&1 | tr '\n' ' '; echo; grep -E '^(gpu_mem|boot_delay|dtparam=audio|#dtoverlay=vc4)' /boot/firmware/config.txt | tr '\n' ' '; echo; cat /etc/modprobe.d/mtspi-lean.conf | tr '\n' ' '; echo"
 
 echo "== clean up"
 chroot "$ROOT" apt-get clean

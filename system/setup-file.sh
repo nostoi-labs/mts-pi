@@ -1,5 +1,5 @@
 #!/bin/bash
-# Applies the optional settings file on the boot partition (mtspi.txt): Wi-Fi country, home Wi-Fi, SSH key.
+# Applies the optional settings file on the boot partition (mtspi.txt): Wi-Fi country, home Wi-Fi, SSH key, Siri.
 # Runs as root at every start (mtspi-setup.service), before the Wi-Fi mode service. Does nothing if the file
 # is missing or empty. The boot partition is the only part of the card every computer can read and write,
 # which is why the file lives there.
@@ -15,8 +15,15 @@ log() { echo "setup file: $*"; }
 # put FILE KEY LINE: FILE keeps a single line for KEY (the new LINE). The file is rebuilt aside and swapped in,
 # then flushed to the card: the first start of a fresh card restarts the Pi abruptly, and a plain append left
 # zero bytes in the settings (which made systemd ignore the whole file, so the bridge ran without the Carlinkit).
+# Nothing is written when the file already holds exactly that line once and is not damaged: the card is not
+# written at every start (each write also cost a flush, seconds on a slow card).
+has() {
+    [ -f "$1" ] && [ "$(tr -d '\000' < "$1" | wc -c)" = "$(wc -c < "$1")" ] \
+        && [ "$(grep -c "^[[:space:]]*$2" "$1")" = 1 ] && grep -qxF -- "$3" "$1"
+}
 put() {
     local f=$1 tmp
+    has "$1" "$2" "$3" && return 0
     tmp=$(mktemp "$f.XXXXXX") || return 1
     { [ -f "$f" ] && tr -d '\000' < "$f" | grep -v "^[[:space:]]*$2"; echo "$3"; } > "$tmp"
     if [ -f "$f" ]; then chmod --reference="$f" "$tmp" 2>/dev/null; chown --reference="$f" "$tmp" 2>/dev/null; else chmod 644 "$tmp"; fi
@@ -24,7 +31,7 @@ put() {
     sync
 }
 
-COUNTRY=""; SSID=""; PSK=""; KEY=""
+COUNTRY=""; SSID=""; PSK=""; KEY=""; SIRI=""
 if [ -f "$FILE" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
         line=${line%$'\r'}                              # files saved on Windows
@@ -38,6 +45,7 @@ if [ -f "$FILE" ]; then
             WIFI_NAME) SSID=$v ;;
             WIFI_PASSWORD) PSK=$v ;;
             SSH_KEY) KEY=$v ;;
+            SIRI) SIRI=$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]') ;;
         esac
     done < "$FILE"
 fi
@@ -97,5 +105,21 @@ if [ -n "$KEY" ]; then
             fi ;;
         *) log "SSH_KEY does not look like a public key, ignored" ;;
     esac
+fi
+
+# Siri from the helmet (joystick held down in CarPlay, or the bike's phone button held): SIRI=on or SIRI=off.
+# Stored as HFP_VR in the settings, which the bridge and the hands-free service read when they start: both are
+# restarted, without waiting, only when the value changes (they may already be running at this point of the boot).
+case "$SIRI" in
+    on|yes|1|true) VR=1 ;;
+    off|no|0|false) VR=0 ;;
+    '') VR="" ;;
+    *) VR=""; log "SIRI must be on or off, ignored: $SIRI" ;;
+esac
+CUR=$(sed -n 's/^HFP_VR=//p' "$DEF" 2>/dev/null | tail -1)
+if [ -n "$VR" ] && [ "${CUR:-0}" != "$VR" ]; then
+    put "$DEF" 'HFP_VR=' "HFP_VR=$VR"
+    systemctl --no-block try-restart mtspi-bridge.service mtspi-hfp.service >/dev/null 2>&1 || true
+    log "Siri switched $SIRI"
 fi
 exit 0

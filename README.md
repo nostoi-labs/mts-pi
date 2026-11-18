@@ -156,7 +156,8 @@ text editor and fill in what you want: the two-letter code of your country (reco
 of your home Wi-Fi, and an SSH public key if you want to log in to the Pi from your computer
 (`ssh mtspi@mts-pi.local`). The Pi applies the file at every start and removes the Wi-Fi password from it once it
 has been used. With a home Wi-Fi set, and no bike around, the Pi joins it about a minute and a half after
-power-on. Leave the file as it is if none of this means anything to you.
+power-on. The same file has a line that switches Siri on, `SIRI=on` (experimental, see
+[Known limits](#known-limits)). Leave the file as it is if none of this means anything to you.
 
 > The ready-made image is built automatically from this repository by
 > [`image/build.sh`](image/build.sh): it is the official Raspberry Pi OS Lite with MTS Pi installed by the same
@@ -262,7 +263,7 @@ you leave Ducati Connect, and picture quality (three steps: higher quality means
 | Battery and signal on the home screen | bench | the iPhone's HFP indicators |
 | The Pi's home screen in Ducati Connect, joystick | **bike** | first tried on the Multistrada on 24 Oct 2026 |
 | Text messages on the bike | not applicable | the Multistrada's dashboard has no function for messages |
-| Siri from the helmet, started by holding the joystick down | bench, switched off in the card image | the dongle's "voice button" pressed and released → the Pi opens the voice channel to the bike without a call → helmet microphone to CarPlay. Not tried on the bike yet: `HFP_VR=1` in `/etc/default/mtspi` switches it on |
+| Siri from the helmet, started by holding the joystick down | bench, switched off in the card image | the dongle's "voice button" pressed and released → the Pi opens the voice channel to the bike without a call → helmet microphone to CarPlay. Not tried on the bike yet: the line `SIRI=on` in `mtspi.txt` on the card switches it on |
 
 "Bike" means: tried on the Multistrada V4 S on 16 Nov 2026, with the ready-made card. "Bench" means: real Pi,
 real Carlinkit, real iPhone, a helmet intercom playing the part of the bike's Bluetooth, an emulated dashboard
@@ -285,6 +286,9 @@ for the screen link, Wi-Fi on 2.4 GHz as on the bike.
 | The same on a freshly written card | 8.5–9 s | bench, 16 Nov 2026 |
 | First start of a ready-made card: power-on → CarPlay | about 2 min (slow Class 4 card; 1 min 54 s with the current image) | bench, 16 Nov 2026 |
 | The same → home Wi-Fi and remote login | about 2.5 min (2 min 38 s with the current image) | bench, 16 Nov 2026 |
+| Later starts of that card: power-on → our program running | 30 s with the leaner system (40 s before), slow Class 4 card | bench, 18 Nov 2026 |
+| The same → CarPlay | 47–51 s (48–66 s before): most of what is left is the iPhone finding the dongle | bench, 18 Nov 2026 |
+| Memory the system sees, running services | 462 MB and 18 with the leaner system (415 MB and 21 before) | bench, 18 Nov 2026 |
 | Ring with the caller's name | 0.7 s | bench, 10 Nov 2026 |
 | Answer from the helmet → voice open | 0.15–0.2 s | bench |
 | Music back after a call | 0.6 s | bench, 10 Nov 2026 |
@@ -359,7 +363,7 @@ change: `sudo systemctl restart mtspi-bridge mtspi-hfp`.
 | `HOME_SSID` | your home Wi-Fi: the Pi returns to it when the bike is not there |
 | `BIKE_ADDR` | Bluetooth address of the bike, if its Bluetooth name does not start with `DUCATI` |
 | `BIKE_GRACE` | seconds without the bike before returning to the home Wi-Fi (default 45) |
-| `HFP_VR` | `1` turns on Siri from the bike's phone button (experimental) |
+| `HFP_VR` | `1` turns on Siri, from the joystick held down and from the bike's phone button (experimental). On the ready-made card the line `SIRI=on` or `SIRI=off` in `mtspi.txt` sets it for you |
 
 The icon inside CarPlay is a plain red square with the letter M. To use your own picture, save it as
 `/var/lib/mtspi/oem_icon.png` (256×256 PNG). The iPhone reads the icon when CarPlay is paired: to change it
@@ -385,7 +389,8 @@ Logs: `journalctl -u mtspi-bridge -u mtspi-hfp -u mtspi-wifi-mode`, plus one fol
   disconnect it in the bike's Bluetooth menu (see [Pairing](#pairing)).
 - Siri from the helmet works on the bench (joystick held down) and is switched off in the card image until it has
   been tried on the bike: we do not know yet whether the real dashboard passes the helmet microphone on when
-  there is no call. `HFP_VR=1` in `/etc/default/mtspi` switches it on.
+  there is no call. To try it, write `SIRI=on` in `mtspi.txt` on the card (`SIRI=off` to go back); on a manual
+  installation, `HFP_VR=1` in `/etc/default/mtspi`.
 - The joystick's moves in CarPlay changed on 17 Nov 2026 (lists move one row at a time, the buttons on the map can
   be reached): tried on the bench in the app grid, the contacts, Apple Maps and Google Maps, not on the bike yet.
   Left and right no longer change track on the "Now Playing" screen: they move between its buttons.
@@ -415,7 +420,7 @@ wrong or missing, then the rest.
 | 3 | **The new joystick moves on the bike** (one row at a time in lists, the wheel on left and right) | tried on the bench only |
 | 4 | **Status light**: the Pi's LED tells you when it is ready to pair and when something is wrong | the ready-made card has no screen to look at |
 | 5 | **SD card protection**: a read-only system | the bike cuts the power without warning |
-| 6 | **Leaner system**: everything the Pi does not need is turned off | faster start, less power, less heat |
+| 6 | **Leaner system**: a first step is in the card image since 18 Nov 2026 (services a Pi on a bike never uses are off, no graphics and no sound card, the first-start setup of Raspberry Pi OS switches itself off after the first start). Next: the time the program itself takes to load | faster start, less power, less heat |
 | 7 | **Updates** without writing the card again | no new pairing at every update |
 | 8 | **Automatic recovery** after a Bluetooth radio error | today it takes key off and on |
 | 9 | Incoming calls and the caller's name checked on the bike, the name under the CarPlay icon, the card's time zone (today the logs are on London time) | details |
@@ -445,6 +450,8 @@ the home screen.
   back by itself after a drop
 - 17 Nov 2026 — on the bench: Siri hears the helmet and answers, and the eight movement commands of the dongle
   tried one by one, which gave the joystick its present moves
+- 18 Nov 2026 — a leaner card image (fewer services, no graphics, the settings no longer rewritten at every
+  start) and a line in `mtspi.txt` that switches Siri on
 
 ## Repository layout
 

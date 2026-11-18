@@ -8,6 +8,7 @@
 # Tested on: Raspberry Pi 3 Model A+, Raspberry Pi OS Lite 64-bit (Debian 13 "trixie").
 # It can be run again at any time (after an update of the repository, or to change the name).
 # It does not touch the boot files (config.txt, cmdline.txt) and does not remove Bluetooth pairings.
+# (Only the card image, built with --image, gets a leaner config.txt: see the end of this file.)
 #
 # --image is used only by image/build.sh: it installs into a system image that is not running (as root, in a
 # chroot), creates the service user "mtspi" and skips everything that needs a live system.
@@ -182,7 +183,7 @@ for u in system/units/*.service; do
 done
 live && $SUDO systemctl daemon-reload
 $SUDO systemctl disable mtspi-p2p 2>/dev/null || true    # started and stopped by mtspi-wifi-mode
-$SUDO systemctl enable ofono mtspi-setup mtspi-adapters mtspi-hfp mtspi-wifi-mode mtspi-btcentral mtspi-bridge
+$SUDO systemctl enable ofono mtspi-setup mtspi-firstboot mtspi-adapters mtspi-hfp mtspi-wifi-mode mtspi-btcentral mtspi-bridge
 if live; then
     $SUDO rfkill unblock bluetooth   # Raspberry Pi OS leaves it blocked at first boot
     $SUDO systemctl restart bluetooth ofono
@@ -210,6 +211,30 @@ else
     # Raspberry Pi OS waits for a "create your user" step that never comes here (the service user already exists,
     # the stock user stays locked) and shows a warning about it at every SSH login
     systemctl disable userconfig.service >/dev/null 2>&1 || true
+    systemctl mask userconfig.service >/dev/null 2>&1 || true     # while it waits, the start never counts as finished
     rm -f /etc/ssh/sshd_config.d/rename_user.conf
+
+    say "leaner system (card image only): services a Pi on a bike never uses, no graphics and no sound card"
+    # Measured on the bench on 17 Nov 2026: 22 running services instead of 26, 474 MB of memory instead of 425.
+    # A manual installation keeps these as they are: that Pi may be used for other things too.
+    for u in udisks2.service dundee.service cron.service e2scrub_all.timer dpkg-db-backup.timer \
+             rpi-eeprom-update.service console-setup.service keyboard-setup.service; do
+        systemctl disable "$u" >/dev/null 2>&1 || true
+    done
+    CFG=/boot/firmware/config.txt
+    # gpu_mem=16 needs the cut-down firmware files, which Raspberry Pi OS ships next to the full ones
+    if [ -f "$CFG" ] && [ -f /boot/firmware/start_cd.elf ] && [ -f /boot/firmware/fixup_cd.dat ] && ! grep -q '^gpu_mem=' "$CFG"; then
+        cp -p "$CFG" "$CFG.raspios"
+        sed -i -e 's/^dtparam=audio=on$/dtparam=audio=off/' -e 's/^camera_auto_detect=1$/camera_auto_detect=0/' \
+               -e 's/^display_auto_detect=1$/display_auto_detect=0/' -e 's/^dtoverlay=vc4-kms-v3d$/#dtoverlay=vc4-kms-v3d/' \
+               -e 's/^max_framebuffers=2$/#max_framebuffers=2/' "$CFG"
+        printf '%s\n' '' '# MTS Pi: nothing is ever shown on a screen and the video is decoded by the processor, so the' \
+            '# graphics part gets the smallest memory share. The file as Raspberry Pi OS ships it is config.txt.raspios.' \
+            'gpu_mem=16' 'boot_delay=0' 'disable_splash=1' >> "$CFG"
+        # with the cut-down firmware the camera and video-codec drivers find nothing and fill the log with errors
+        printf 'blacklist bcm2835_codec\nblacklist bcm2835_isp\nblacklist bcm2835_v4l2\nblacklist snd_bcm2835\n' > /etc/modprobe.d/mtspi-lean.conf
+    else
+        warn "boot file left as it is (config.txt or the cut-down firmware not found, or gpu_mem already set)"
+    fi
     say "done (image)"
 fi
