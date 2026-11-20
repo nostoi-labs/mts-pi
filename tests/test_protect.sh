@@ -46,6 +46,20 @@ fresh "$BASE"; run on; run on
 check "on twice: one copy of each word" '[ "$(cat "$T/cmdline.txt")" = "$ON" ]'
 run off
 check "off: the original line, nothing left behind" '[ "$(cat "$T/cmdline.txt")" = "$BASE" ]'
+# 5b. the command and the file agree: "off" by hand on a protected card is not undone at the next start, "on" neither
+fresh "$ON"; cp system/mtspi.txt "$T/mtspi.txt"
+run off
+check "off by hand: written in mtspi.txt, once" '[ "$(grep -c "^PROTECT=off$" "$T/mtspi.txt")" = 1 ] && [ "$(grep -c "^PROTECT=" "$T/mtspi.txt")" = 1 ] && grep -q "^LOGS=" "$T/mtspi.txt"'
+echo "$BASE" > "$T/proc"; rm -f "$T/rebooted"
+run apply
+check "off by hand, next start: stays writable, no restart" '[ "$(cat "$T/cmdline.txt")" = "$BASE" ] && [ ! -e "$T/rebooted" ]'
+run on
+check "on by hand: written in mtspi.txt" '[ "$(grep -c "^PROTECT=on$" "$T/mtspi.txt")" = 1 ] && [ "$(cat "$T/cmdline.txt")" = "$ON" ]'
+echo "$ON" > "$T/proc"; rm -f "$T/rebooted"
+run apply
+check "on by hand, next start: stays protected, no restart" '[ "$(cat "$T/cmdline.txt")" = "$ON" ] && [ ! -e "$T/rebooted" ]'
+printf 'WIFI_COUNTRY=IT\n' > "$T/mtspi.txt"; run off
+check "a file without the line gets it" 'grep -qx "PROTECT=off" "$T/mtspi.txt" && grep -qx "WIFI_COUNTRY=IT" "$T/mtspi.txt"'
 # 6. a boot file that cannot be changed: no restart (it would restart for ever)
 fresh "$BASE"; printf 'PROTECT=on\n' > "$T/mtspi.txt"; chmod 555 "$T"; chmod 444 "$T/cmdline.txt"
 run apply

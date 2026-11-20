@@ -11,6 +11,7 @@
 #   mtspi-protect status   what is mounted how, and how much was written to each partition since power-on
 #   mtspi-protect off      the system is writable from the next start (to update or change it):  sudo reboot
 #   mtspi-protect on       read-only again from the next start:  sudo reboot  (do not cut the power before that)
+#                          (both also write PROTECT=off|on in mtspi.txt, the same as editing the file by hand)
 #   mtspi-protect apply    at every start: follows PROTECT=on|off in mtspi.txt (on when the line is missing or empty),
 #                          restarting the Pi once when the card is in the other state. The first start of a fresh
 #                          card is writable (the system finishes setting itself up), then this switches it over.
@@ -32,6 +33,16 @@ wanted() {
     v=$(tr -d '\r' < "$FILE" 2>/dev/null | sed -n 's/^[[:space:]]*PROTECT[[:space:]]*=[[:space:]]*//p' | tail -1 | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]"')
     case "$v" in off|no|0|false) echo off ;; *) echo on ;; esac
 }
+# on and off also write the choice in mtspi.txt: that file is what "apply" follows at every start, so a choice made
+# with the command would otherwise be undone at the next start
+remember() {
+    [ -f "$FILE" ] || return 0
+    if grep -q '^[[:space:]]*PROTECT[[:space:]]*=' "$FILE"; then
+        sed -i "s/^[[:space:]]*PROTECT[[:space:]]*=.*/PROTECT=$1/" "$FILE"
+    else
+        printf '\nPROTECT=%s\n' "$1" >> "$FILE"
+    fi
+}
 case "${1:-status}" in
 status)
     overlay_now && echo "system: READ-ONLY (changes live in memory until the next start)" || echo "system: writable"
@@ -50,6 +61,7 @@ status)
 on)
     need_root
     boot_rw
+    remember on
     strip
     # panic=10: if the start-up cannot mount the system it does not sit at a console nobody sees, it restarts after 10 s
     # fsck.mode=skip: no check at start-up that could stand waiting; the data partition has its own, with a time limit
@@ -61,6 +73,7 @@ on)
 off)
     need_root
     boot_rw
+    remember off
     strip
     boot_ro
     echo "writable from the next start:  sudo reboot" ;;

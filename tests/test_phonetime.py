@@ -44,14 +44,14 @@ def _phone(**kw):
 
 def test_real_answers_give_the_right_utc_time():
     p = _phone()
-    got = phonetime.read("AA:BB:CC:DD:EE:FF", connect=lambda mac: p)
+    got = phonetime.read_direct("AA:BB:CC:DD:EE:FF", connect=lambda mac: p)
     assert abs(got["epoch"] - REAL_EPOCH) < 0.001, got
     assert got["offset_min"] == 60 and p.closed
 
 
 def test_the_phones_own_questions_are_refused_not_mistaken_for_answers():
     p = _phone()
-    phonetime.read("AA:BB:CC:DD:EE:FF", connect=lambda mac: p)
+    phonetime.read_direct("AA:BB:CC:DD:EE:FF", connect=lambda mac: p)
     assert bytes.fromhex("0110000006") in p.sent, [s.hex() for s in p.sent]
 
 
@@ -77,9 +77,74 @@ def test_unknown_zone_or_nonsense_date_is_an_error_not_a_wrong_clock():
 def test_error_from_the_phone_and_silence():
     p = FakePhone({phonetime.UUID_LOCAL_TIME_INFO: bytes.fromhex("010801000a")})
     try:
-        phonetime.read("AA:BB:CC:DD:EE:FF", connect=lambda mac: p)
+        phonetime.read_direct("AA:BB:CC:DD:EE:FF", connect=lambda mac: p)
     except RuntimeError as e:
         assert "not found" in str(e) and p.closed
+    else:
+        raise AssertionError("no error")
+
+
+# what BlueZ shows after a complete pairing (the iPhone opened the channel itself), with the values read on 20 Nov 2026
+DEV = "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF"
+BLUEZ_TIME = bytes.fromhex("ea070b14163132054f02")          # 2026-11-20 22:49:50 local
+BLUEZ_EPOCH = calendar.timegm((2026, 11, 20, 21, 49, 50)) + 0x4F / 256
+
+
+def _bluez(with_time=True, other_phone=True):
+    objs = {DEV: {"org.bluez.Device1": {"Address": {"data": "AA:BB:CC:DD:EE:FF"}}}}
+    if other_phone:      # a second phone with the same service must never be read by mistake
+        objs["/org/bluez/hci0/dev_11_22_33_44_55_66"] = {"org.bluez.Device1": {"Address": {"data": "11:22:33:44:55:66"}}}
+        objs["/org/bluez/hci0/dev_11_22_33_44_55_66/service0001/char0002"] = {"org.bluez.GattCharacteristic1": {"UUID": {"data": phonetime.CT}}}
+    if with_time:
+        objs[DEV + "/service001d/char001e"] = {"org.bluez.GattCharacteristic1": {"UUID": {"data": phonetime.CT}}}
+        objs[DEV + "/service001d/char0021"] = {"org.bluez.GattCharacteristic1": {"UUID": {"data": phonetime.LTI.upper()}}}
+    calls = []
+
+    def busctl(*a):
+        calls.append(a)
+        if a[4] == "GetManagedObjects":
+            return {"data": [objs]}
+        return {"data": [list(BLUEZ_TIME if a[2].endswith("char001e") else bytes([4, 0]))]}
+    return busctl, calls
+
+
+def test_through_bluez_when_the_phone_opened_the_channel():
+    busctl, calls = _bluez()
+    got = phonetime.read_bluez("aa:bb:cc:dd:ee:ff", busctl=busctl)
+    assert abs(got["epoch"] - BLUEZ_EPOCH) < 0.001 and got["offset_min"] == 60 and got["via"] == "bluez", got
+    assert all(DEV in c[2] for c in calls[1:]), calls
+
+
+def test_bluez_without_the_service_is_not_an_answer():
+    for busctl, _ in (_bluez(with_time=False), _bluez(with_time=False, other_phone=False)):
+        try:
+            phonetime.read_bluez("AA:BB:CC:DD:EE:FF", busctl=busctl)
+        except LookupError:
+            continue
+        raise AssertionError("read another phone, or nothing")
+
+
+def test_read_tries_bluez_first_then_its_own_channel():
+    busctl, _ = _bluez()
+    got = phonetime.read("AA:BB:CC:DD:EE:FF", bluez=lambda mac: phonetime.read_bluez(mac, busctl=busctl),
+                         direct=lambda mac: (_ for _ in ()).throw(AssertionError("own channel not needed")))
+    assert got["via"] == "bluez"
+    empty, _ = _bluez(with_time=False)
+    p = _phone()
+    got = phonetime.read("AA:BB:CC:DD:EE:FF", bluez=lambda mac: phonetime.read_bluez(mac, busctl=empty),
+                         direct=lambda mac: phonetime.read_direct(mac, connect=lambda m: p))
+    assert got["via"] == "direct" and abs(got["epoch"] - REAL_EPOCH) < 0.001
+
+
+def test_both_ways_closed_says_why():
+    empty, _ = _bluez(with_time=False)
+
+    def refused(mac):
+        raise ConnectionRefusedError(111, "Connection refused")
+    try:
+        phonetime.read("AA:BB:CC:DD:EE:FF", bluez=lambda mac: phonetime.read_bluez(mac, busctl=empty), direct=refused)
+    except RuntimeError as e:
+        assert "does not show" in str(e) and "Connection refused" in str(e), e
     else:
         raise AssertionError("no error")
 

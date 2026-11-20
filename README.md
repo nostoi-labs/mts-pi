@@ -142,13 +142,25 @@ You need a computer with an SD card reader (or a USB adapter for microSD cards).
    then the verification and the final message (last two pictures).*
 4. **Start the Pi.** Put the card in the Pi, plug the Carlinkit into its USB port and power the Pi through its
    micro-USB port (at home from a 2 A supply, on the bike from the socket in the tank compartment). The first start
-   takes about two minutes, measured on an old, slow card: the Pi makes room on the card (its green light stays
-   on while it does). When **MTS Pi**
-   shows up among the Bluetooth devices on your iPhone, it is ready: go on with [Pairing](#pairing). The light on
-   the Carlinkit stays red until CarPlay connects.
+   takes two to three minutes (about two on a fast card, three on an old Class 4 one): the Pi finishes setting
+   itself up, then restarts once
+   by itself and comes back with the card protected (see below). Leave it alone until then: if the iPhone already
+   knows the dongle, CarPlay connects for a moment during that first start, drops at the restart and comes back
+   to stay. When **MTS Pi**
+   shows up among the Bluetooth devices on your iPhone and stays there, it is ready: go on with
+   [Pairing](#pairing). The light on the Carlinkit stays red until CarPlay connects.
 
 That is all. The Pi does not need your home Wi-Fi, a keyboard or a screen. To update, write a newer image the same
 way and pair again.
+
+**The card is protected against power cuts.** The bike cuts the power to the Pi at every key-off, without
+warning. On the ready-made card nothing is written while the Pi works: the system is read-only, pairings,
+phonebook and settings sit on a small partition of their own that is written only when one of them changes, and
+the logs stay in memory. On our bench the Pi lost power 300 times in a row and came back every time with
+everything in place; it also did when the power went ten seconds after pairing an iPhone, in the middle of saving
+the phonebook, and with CarPlay in use. If you want to change the system yourself (an update, an experiment),
+write `PROTECT=off` in `mtspi.txt`: the Pi restarts once and stays writable until you write `PROTECT=on` or delete
+the word. A manual installation is not protected.
 
 **Optional: your country, home Wi-Fi and remote access.** After writing the card, take it out and put it back
 in: your computer shows a small drive called `bootfs`. On it there is a text file, `mtspi.txt`. Open it with any
@@ -157,7 +169,8 @@ of your home Wi-Fi, and an SSH public key if you want to log in to the Pi from y
 (`ssh mtspi@mts-pi.local`). The Pi applies the file at every start and removes the Wi-Fi password from it once it
 has been used. With a home Wi-Fi set, and no bike around, the Pi joins it about a minute and a half after
 power-on. The same file has a line that switches Siri on, `SIRI=on` (experimental, see
-[Known limits](#known-limits)). Leave the file as it is if none of this means anything to you.
+[Known limits](#known-limits)), the `PROTECT=` line described above, and `LOGS=card`, which keeps the logs on the
+card instead of in memory. Leave the file as it is if none of this means anything to you.
 
 > The ready-made image is built automatically from this repository by
 > [`image/build.sh`](image/build.sh): it is the official Raspberry Pi OS Lite with MTS Pi installed by the same
@@ -370,7 +383,10 @@ later, forget the car on the iPhone (Settings › General › CarPlay), unplug t
 pair again.
 
 Logs: `journalctl -u mtspi-bridge -u mtspi-hfp -u mtspi-wifi-mode`, plus one folder per run in `/var/lib/mtspi/`
-(the last 20 are kept).
+(the last 20 are kept). On the ready-made card the logs are in memory and are gone at power-off (the last two
+runs, in `/var/lib/mtspi-logs/`); with `LOGS=card` in `mtspi.txt` they are kept on a partition of their own, in
+`/log/mtspi/` (the last 20 runs) and in the system journal. `mtspi-protect status` shows how the card is mounted
+and how much has been written to each partition since power-on.
 
 ## Known limits
 
@@ -396,8 +412,9 @@ Logs: `journalctl -u mtspi-bridge -u mtspi-hfp -u mtspi-wifi-mode`, plus one fol
 - The joystick has no Back key and its centre press cannot be held (the dashboard does not pass that on): Back is
   the joystick held up. Leaving Ducati Connect with the joystick held left also takes CarPlay one step back.
 - The socket in the tank compartment stays on for a few seconds after key-off and then cuts the power: the Pi is
-  switched off abruptly every time, and the SD card is not protected against that yet. Keep a copy of the card
-  once it works.
+  switched off abruptly every time. The ready-made card is protected against that (see
+  [Install](#install)); tried on the bench, not yet over weeks of riding. A manual installation is not: keep a
+  copy of that card once it works.
 - Rarely, the Pi can stay stuck after restarting itself: red light steady, green light off, nothing on the
   dashboard. On our bench this happened only when a restart was forced while the SD card was busy, most easily
   in the first seconds of start-up; never with an orderly restart and never after a plain power cut. Nothing is
