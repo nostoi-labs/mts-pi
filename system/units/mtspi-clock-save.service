@@ -1,5 +1,5 @@
 [Unit]
-Description=MTS Pi: the real time is kept on the data partition (once per power-on)
+Description=MTS Pi: the real time is kept on the data partition (once per power-on), so the next start begins from it
 After=data.mount
 
 [Service]

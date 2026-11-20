@@ -10,6 +10,9 @@ PY=${PY:-.venv/bin/python}
 DATA=${DATA:-/var/lib/mtspi}
 LOGS=${MTSPI_LOG_DIR:-$DATA}
 RUN=$LOGS/run-$(date +%Y%m%d-%H%M%S)
+# The name comes from the clock, and a Pi that has no internet starts every time from the same moment (the last time
+# it knew the real time): a folder is never used twice, the second start in the same second gets "-2" and so on.
+BASE=$RUN; n=1; while [ -e "$RUN" ]; do n=$((n + 1)); RUN=$BASE-$n; done
 # a log folder that cannot be made (card read-only) must not keep the bridge from starting
 mkdir -p "$RUN" 2>/dev/null || { LOGS=/run/user/$(id -u); RUN=$LOGS/run-$(date +%Y%m%d-%H%M%S); mkdir -p "$RUN"; }
 # keep the logs of the last LOG_KEEP runs (default 20). Never this run's own folder: the names come from the clock,

@@ -1,8 +1,10 @@
 [Unit]
-Description=MTS Pi: the network has given the real time
+Description=MTS Pi: the network or the iPhone has given the real time
 
 [Path]
 PathExists=/run/systemd/timesync/synchronized
+# or the iPhone has (mtspi/phonetime.py leaves this mark when it sets the clock)
+PathExists=/var/lib/mtspi-logs/clock-from-phone
 
 [Install]
 WantedBy=multi-user.target

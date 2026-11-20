@@ -151,23 +151,27 @@ def test_both_ways_closed_says_why():
 
 def _sync(pi_now, ntp, read_fn=None):
     logs, sets = [], []
-    flag = os.path.join(tempfile.mkdtemp(), "synchronized")
+    d = tempfile.mkdtemp()
+    flag, mark = os.path.join(d, "synchronized"), os.path.join(d, "clock-from-phone")
     if ntp:
         open(flag, "w").close()
     done = phonetime.sync("AA:BB:CC:DD:EE:FF", lambda ev, **kw: logs.append((ev, kw)), now=lambda: pi_now, ntp_flag=flag,
                           read_fn=read_fn or (lambda mac: {"epoch": REAL_EPOCH, "offset_min": 60, "took_s": 0.4}),
-                          set_clock=lambda e: sets.append(e) or True)
+                          set_clock=lambda e: sets.append(e) or True, set_mark=mark)
+    logs.append(("mark", os.path.exists(mark)))
     return done, logs, sets
 
 
 def test_clock_hours_behind_and_no_internet_is_set():
     done, logs, sets = _sync(REAL_EPOCH - 6 * 3600, ntp=False)
     assert done == "set" and sets == [REAL_EPOCH] and logs[0][1]["set"] is True and logs[0][1]["step_s"] == 21600.0
+    assert logs[-1] == ("mark", True)            # the system is told to keep this time for the next start
 
 
 def test_clock_already_set_by_the_internet_is_left_alone():
     done, logs, sets = _sync(REAL_EPOCH - 6 * 3600, ntp=True)
     assert done == "kept" and sets == [] and logs[0][1]["set"] is False and logs[0][1]["internet_time"] is True
+    assert logs[-1] == ("mark", False)
 
 
 def test_clock_already_right_is_left_alone():

@@ -23,6 +23,10 @@ ATT_PSM = 0x1F
 UUID_CURRENT_TIME = 0x2A2B
 UUID_LOCAL_TIME_INFO = 0x2A0F
 NTP_FLAG = "/run/systemd/timesync/synchronized"
+# On the protected card this mark makes the system keep the time just set (mtspi-clock-save), so that the next start
+# begins from it instead of from the last time the Pi was on the internet. The folder is in memory; elsewhere it
+# does not exist and nothing happens.
+SET_MARK = "/var/lib/mtspi-logs/clock-from-phone"
 # what the phone may ask us on the same channel: requests get "not supported", the rest is ignored
 _REQUESTS = {0x02, 0x04, 0x06, 0x08, 0x0A, 0x0C, 0x0E, 0x10, 0x12, 0x16, 0x18, 0x20}
 _ERRORS = {0x02: "read not permitted", 0x05: "authentication needed", 0x06: "not supported", 0x08: "authorization needed",
@@ -139,7 +143,7 @@ def read_direct(mac, timeout=6.0, connect=None):
         sock.close()
 
 
-def sync(mac, log, min_step_s=2.0, read_fn=read, now=time.time, set_clock=None, ntp_flag=NTP_FLAG):
+def sync(mac, log, min_step_s=2.0, read_fn=read, now=time.time, set_clock=None, ntp_flag=NTP_FLAG, set_mark=SET_MARK):
     """Blocking. Reads the phone's time and sets the Pi's clock when the internet has not set it and they differ.
     Returns "set", "kept" (read fine, clock left alone) or None (no answer: nothing changed). Never raises."""
     try:
@@ -151,6 +155,11 @@ def sync(mac, log, min_step_s=2.0, read_fn=read, now=time.time, set_clock=None, 
     ntp = os.path.exists(ntp_flag)
     do_set = not ntp and abs(step) >= min_step_s
     ok = bool(do_set and (set_clock or _set_clock)(got["epoch"]))
+    if ok:
+        try:
+            open(set_mark, "w").close()
+        except OSError:
+            pass
     log("phone_time", step_s=round(step, 2), utc_offset_min=got["offset_min"], took_s=got["took_s"],
         via=got.get("via"), internet_time=ntp, set=ok, **({"set_failed": True} if do_set and not ok else {}))
     return "set" if ok else "kept"
