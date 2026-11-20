@@ -1,0 +1,12 @@
+[Unit]
+Description=MTS Pi: a new or changed Bluetooth pairing is copied to the data partition
+After=mtspi-btstore-load.service
+ConditionPathExists=/run/mtspi-btstore.loaded
+
+[Service]
+ExecStart=/usr/bin/python3 @REPO@/mtspi/btstore.py watch
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

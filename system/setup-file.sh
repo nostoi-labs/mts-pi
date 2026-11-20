@@ -1,5 +1,6 @@
 #!/bin/bash
 # Applies the optional settings file on the boot partition (mtspi.txt): Wi-Fi country, home Wi-Fi, SSH key, Siri.
+# (PROTECT= and LOGS= in the same file are read by system/protect.sh and system/logs.sh.)
 # Runs as root at every start (mtspi-setup.service), before the Wi-Fi mode service. Does nothing if the file
 # is missing or empty. The boot partition is the only part of the card every computer can read and write,
 # which is why the file lives there.
@@ -31,7 +32,18 @@ put() {
     sync
 }
 
-COUNTRY=""; SSID=""; PSK=""; KEY=""; SIRI=""
+# The boot partition can be mounted read-only (a card protected against power cuts): it is opened for writing
+# only for the one change this script makes to the file, and closed again straight after.
+boot_rw() {
+    BOOTMNT=$(findmnt -n -o TARGET -T "$FILE" 2>/dev/null) || BOOTMNT=""
+    BOOTWAS=rw
+    if [ -n "$BOOTMNT" ] && findmnt -n -o OPTIONS "$BOOTMNT" 2>/dev/null | tr ',' '\n' | grep -qx ro; then
+        mount -o remount,rw "$BOOTMNT" 2>/dev/null && BOOTWAS=ro
+    fi
+}
+boot_back() { if [ "${BOOTWAS:-rw}" = ro ]; then sync; mount -o remount,ro "$BOOTMNT" 2>/dev/null || true; fi; }
+
+COUNTRY=""; SSID=""; PSK=""; KEY=""; SIRI=""; TPMS=""
 if [ -f "$FILE" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
         line=${line%$'\r'}                              # files saved on Windows
@@ -46,6 +58,7 @@ if [ -f "$FILE" ]; then
             WIFI_PASSWORD) PSK=$v ;;
             SSH_KEY) KEY=$v ;;
             SIRI) SIRI=$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]') ;;
+            TPMS) TPMS=$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]') ;;
         esac
     done < "$FILE"
 fi
@@ -75,8 +88,10 @@ if [ -n "$SSID" ] && [ -n "$PSK" ]; then
     nmcli connection delete mtspi-home >/dev/null 2>&1 || true
     if nmcli connection add type wifi con-name mtspi-home ifname wlan0 ssid "$SSID" \
             wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$PSK" connection.autoconnect yes >/dev/null 2>&1; then
+        boot_rw
         sed -i 's/^\([[:space:]]*WIFI_PASSWORD[[:space:]]*=\).*/\1/' "$FILE"      # the password does not stay on the card in clear
         sync
+        boot_back
         log "home Wi-Fi \"$SSID\" saved, password removed from the file"
     else
         log "could not save the home Wi-Fi \"$SSID\""
@@ -121,5 +136,23 @@ if [ -n "$VR" ] && [ "${CUR:-0}" != "$VR" ]; then
     put "$DEF" 'HFP_VR=' "HFP_VR=$VR"
     systemctl --no-block try-restart mtspi-bridge.service mtspi-hfp.service >/dev/null 2>&1 || true
     log "Siri switched $SIRI"
+fi
+# Tyre pressure sensors (experimental, not in the template): TPMS=on starts the listener, TPMS=off stops it.
+# Stored as TPMS=1|0 in the settings, which the listener's service reads; nothing happens when the line is missing.
+case "$TPMS" in
+    on|yes|1|true) TP=1 ;;
+    off|no|0|false) TP=0 ;;
+    '') TP="" ;;
+    *) TP=""; log "TPMS must be on or off, ignored: $TPMS" ;;
+esac
+CUR=$(sed -n 's/^TPMS=//p' "$DEF" 2>/dev/null | tail -1)
+if [ -n "$TP" ] && [ "${CUR:-0}" != "$TP" ]; then
+    put "$DEF" 'TPMS=' "TPMS=$TP"
+    if [ "$TP" = 1 ]; then
+        systemctl --no-block restart mtspi-tpms.service >/dev/null 2>&1 || true
+    else
+        systemctl --no-block stop mtspi-tpms.service >/dev/null 2>&1 || true
+    fi
+    log "tyre pressure listener switched $TPMS"
 fi
 exit 0

@@ -1,16 +1,20 @@
 #!/bin/bash
 # Starts the bridge (mtspi-bridge.service): the Pi's home screen on the dashboard, CarPlay through the Carlinkit
 # and the Bluetooth bridge iPhone -> Pi -> bike (music, calls, phonebook).
-# Settings come from /etc/default/mtspi. Each run writes its log (JSON lines) to a new folder under $DATA.
+# Settings come from /etc/default/mtspi. Each run writes its log (JSON lines) to a new folder under $DATA, or under
+# MTSPI_LOG_DIR when that is set (a folder in memory: then set MTSPI_LOG_SYNC=0 and MTSPI_LOG_MAX_MB too).
 # For a bench without the bike: BT=emulated, CONTROL=tcp:9150, WIFI=none.
 set -u
 cd "$(dirname "$0")/.."
 PY=${PY:-.venv/bin/python}
 DATA=${DATA:-/var/lib/mtspi}
-RUN=$DATA/run-$(date +%Y%m%d-%H%M%S)
-mkdir -p "$RUN"
-# keep the logs of the last LOG_KEEP runs (default 20)
-ls -1d "$DATA"/run-* 2>/dev/null | head -n -"${LOG_KEEP:-20}" | xargs -r rm -rf
+LOGS=${MTSPI_LOG_DIR:-$DATA}
+RUN=$LOGS/run-$(date +%Y%m%d-%H%M%S)
+# a log folder that cannot be made (card read-only) must not keep the bridge from starting
+mkdir -p "$RUN" 2>/dev/null || { LOGS=/run/user/$(id -u); RUN=$LOGS/run-$(date +%Y%m%d-%H%M%S); mkdir -p "$RUN"; }
+# keep the logs of the last LOG_KEEP runs (default 20). Never this run's own folder: the names come from the clock,
+# and a Pi whose clock starts behind (no internet) gives the new folder an older name than the ones already there.
+ls -1d "$LOGS"/run-* 2>/dev/null | grep -vxF "$RUN" | head -n -"$(( ${LOG_KEEP:-20} - 1 ))" | xargs -r rm -rf
 # RADIO=esp32phone|pro: pro variant (external Bluetooth radio on the serial port), not part of this release.
 # CARLINKIT=usb with the real dongle, none without it.
 if [ "${RADIO:-internal}" = esp32phone ]; then
@@ -28,4 +32,4 @@ exec "$PY" -m mtspi.bridge \
     --settings "$DATA/settings.json" --pbap "${PBAP:-bluez}" --phonebook-cache "$DATA/phonebook.json" \
     ${CALL_FPS:+--call-fps "$CALL_FPS"} \
     ${MUSIC_FPS:+--music-fps "$MUSIC_FPS"} \
-    --log "$RUN/bridge.jsonl" --ap-credentials-file "$DATA/ap.jsonl" "$@"
+    --log "$RUN/bridge.jsonl" --ap-credentials-file "$RUN/ap.jsonl" "$@"

@@ -10,6 +10,9 @@ ConditionPathExists=!/etc/cloud/cloud-init.disabled
 [Service]
 Type=oneshot
 ExecStart=/bin/sh -c 'touch /etc/cloud/cloud-init.disabled && sync'
+# On the ready-made card this is also the moment the protection against power cuts is switched on: the first
+# start has to be writable, from here on the system is read-only (the Pi restarts once by itself).
+ExecStart=-/bin/sh -c '[ -e /dev/disk/by-label/mtspi-data ] && exec @REPO@/system/protect.sh apply || true'
 
 [Install]
 WantedBy=cloud-init.target

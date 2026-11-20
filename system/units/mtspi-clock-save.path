@@ -1,0 +1,8 @@
+[Unit]
+Description=MTS Pi: the network has given the real time
+
+[Path]
+PathExists=/run/systemd/timesync/synchronized
+
+[Install]
+WantedBy=multi-user.target

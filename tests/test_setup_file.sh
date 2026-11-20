@@ -4,7 +4,9 @@ set -u
 cd "$(dirname "$0")/.."
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin" "$T/home"
-for c in nmcli iw rfkill chown; do printf '#!/bin/sh\necho "%s $*" >> "%s/calls"\nexit 0\n' "$c" "$T" > "$T/bin/$c"; chmod +x "$T/bin/$c"; done
+# findmnt: the folder of the test is "the boot partition", read-only when the file $T/boot_ro exists
+printf '#!/bin/sh\ncase "$*" in *TARGET*) echo "%s" ;; *OPTIONS*) [ -e "%s/boot_ro" ] && echo "ro,relatime" || echo "rw,relatime" ;; esac\n' "$T" "$T" > "$T/bin/findmnt"; chmod +x "$T/bin/findmnt"
+for c in nmcli iw rfkill chown mount; do printf '#!/bin/sh\necho "%s $*" >> "%s/calls"\nexit 0\n' "$c" "$T" > "$T/bin/$c"; chmod +x "$T/bin/$c"; done
 # systemctl: "is-enabled" says no until "enable" has been called, as on a card that has never had SSH switched on
 printf '#!/bin/sh\necho "systemctl $*" >> "%s/calls"\ncase "$1" in is-enabled) [ -e "%s/ssh_enabled" ]; exit $? ;; enable) : > "%s/ssh_enabled" ;; esac\nexit 0\n' "$T" "$T" "$T" > "$T/bin/systemctl"; chmod +x "$T/bin/systemctl"
 printf '#!/bin/sh\necho "tester:x:1000:1000::%s/home:/bin/sh"\n' "$T" > "$T/bin/getent"; chmod +x "$T/bin/getent"
@@ -84,4 +86,24 @@ check "Siri: nonsense ignored" 'grep -qx "HFP_VR=0" "$T/defaults" && ! grep -q "
 printf 'SIRI=\n' > "$T/mtspi.txt"; : > "$T/calls"
 run
 check "Siri: empty line leaves the setting alone" 'grep -qx "HFP_VR=0" "$T/defaults" && ! grep -q "try-restart" "$T/calls"'
+# 9. boot partition mounted read-only (protected card): opened for writing only to remove the password, then closed
+printf 'WIFI_COUNTRY=IT\nWIFI_NAME=Home\nWIFI_PASSWORD=secret123\n' > "$T/mtspi.txt"; : > "$T/calls"; : > "$T/boot_ro"
+run
+check "read-only boot partition: opened, password removed, closed again" 'grep -q "^mount -o remount,rw $T" "$T/calls" && grep -q "^mount -o remount,ro $T" "$T/calls" && ! grep -q secret123 "$T/mtspi.txt" && [ "$(grep -n "remount,rw" "$T/calls" | cut -d: -f1)" -lt "$(grep -n "remount,ro" "$T/calls" | cut -d: -f1)" ]'
+rm -f "$T/boot_ro"; printf 'WIFI_COUNTRY=IT\nWIFI_NAME=Home\nWIFI_PASSWORD=secret456\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "writable boot partition: never remounted" '! grep -q "^mount " "$T/calls" && ! grep -q secret456 "$T/mtspi.txt"'
+# 10. tyre pressure listener (experimental, not in the template): on, twice, off, nonsense
+printf 'TPMS=on\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "TPMS on: stored, listener started without waiting" 'grep -qx "TPMS=1" "$T/defaults" && grep -q "^systemctl --no-block restart mtspi-tpms.service" "$T/calls"'
+: > "$T/calls"
+run
+check "TPMS on, second start: nothing restarted" '! grep -q "mtspi-tpms" "$T/calls" && [ "$(grep -c "^TPMS=" "$T/defaults")" = 1 ]'
+printf 'TPMS=off\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "TPMS off: stored, listener stopped" 'grep -qx "TPMS=0" "$T/defaults" && grep -q "^systemctl --no-block stop mtspi-tpms.service" "$T/calls"'
+printf 'TPMS=perhaps\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "TPMS: nonsense ignored" 'grep -qx "TPMS=0" "$T/defaults" && ! grep -q "mtspi-tpms" "$T/calls"'
 [ "$fail" = 0 ] && echo "ALL OK" || { echo "SOME FAILED"; cat "$T/out"; exit 1; }

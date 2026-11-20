@@ -1,0 +1,16 @@
+[Unit]
+Description=MTS Pi: logs in memory, or on the card when mtspi.txt asks for it
+DefaultDependencies=no
+After=boot-firmware.mount var-lib-mtspi\x2dlogs.mount systemd-udev-settle.service
+Wants=boot-firmware.mount
+Before=systemd-journal-flush.service mtspi-bridge.service mtspi-hfp.service local-fs.target
+JobTimeoutSec=90
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=80
+ExecStart=@REPO@/system/logs.sh
+
+[Install]
+WantedBy=local-fs.target

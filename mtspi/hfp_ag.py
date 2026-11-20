@@ -35,6 +35,7 @@ from dbus_fast.service import ServiceInterface, method
 
 from mtspi.bluez import UUID_HFP_AG, _v, call, system_bus
 from mtspi.tasks import spawn
+from mtspi import alive
 
 PATH = "/ducati/hfp_ag"
 SOL_SCO, SCO_OPTIONS = 17, 1
@@ -336,7 +337,7 @@ class BridgeState:
         states = [c["state"] for _, c in self.calls]
         self.ind["call"] = 1 if "active" in states else 0
         self.ind["callsetup"] = 1 if "incoming" in states else 2 if "dialing" in states else 0
-        self.ag.log("hfp_bridge_event", ev=ev, name=m.get("name"))
+        self.ag.log("hfp_bridge_event", ev=ev, name=m.get("name"), **({"cind": m.get("cind")} if ev == "indicators" else {}))
 
     async def serve(self):
         self.loop = asyncio.get_running_loop()
@@ -611,6 +612,7 @@ class HfpAg:
         await call(self.bus, "org.bluez", "/org/bluez", "org.bluez.ProfileManager1", "RegisterProfile",
                    "osa{sv}", [PATH, UUID_HFP_AG, opts])
         self.log("hfp_ag_listening", adapters=sorted(self.adapters), sco=self.sco_enabled)
+        self._alive = alive.start()         # a stuck main loop gets the program restarted by systemd (WatchdogSec)
         last = None
         while True:
             try:

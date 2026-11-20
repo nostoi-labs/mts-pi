@@ -1,0 +1,14 @@
+[Unit]
+Description=MTS Pi: the card is protected against power cuts, or writable when mtspi.txt asks for it
+# Not on the very first start of a fresh card: there the system is still setting itself up, and the switch is made
+# by mtspi-firstboot when that is over.
+After=mtspi-setup.service boot-firmware.mount
+ConditionPathExists=/etc/cloud/cloud-init.disabled
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=@REPO@/system/protect.sh apply
+
+[Install]
+WantedBy=multi-user.target

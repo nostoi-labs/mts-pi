@@ -156,20 +156,63 @@ class Phonebook:
     def base(self, folder: str) -> int:
         return 0 if folder == "pb" else 1
 
+    @staticmethod
+    def calls_path(path: str) -> str:
+        root, ext = os.path.splitext(path)
+        return root + "-calls" + ext
+
     def load(self, path: str) -> bool:
+        """Reads the copy kept on the card: the contacts from `path`, the call lists from the file next to it.
+        (A file written by an older version holds both: it is still read.)"""
+        books, ok = {}, False
+        for p in (path, self.calls_path(path)):
+            try:
+                with open(p, encoding="utf-8") as f:
+                    d = json.load(f)
+                if isinstance(d, dict):
+                    books.update(d)
+                    ok = ok or p == path
+            except (OSError, ValueError):
+                pass
+        if ok:
+            self.update(books)
+        return ok
+
+    @staticmethod
+    def _write_if_changed(path: str, data: dict) -> bool:
         try:
             with open(path, encoding="utf-8") as f:
-                self.update(json.load(f))
-            return True
+                if json.load(f) == data:
+                    return False
         except (OSError, ValueError):
-            return False
-
-    def save(self, path: str) -> None:
+            pass
         tmp = path + ".tmp"
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(self.books, f)
+            json.dump(data, f)
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp, path)
+        try:                                            # the rename itself must reach the card too
+            dfd = os.open(os.path.dirname(os.path.abspath(path)), os.O_RDONLY)
+            os.fsync(dfd)
+            os.close(dfd)
+        except OSError:
+            pass
+        return True
+
+    def save(self, path: str, calls: bool = True) -> list:
+        """Keeps a copy on the card, so that after a power-on the bike has names before the iPhone is read again.
+        The card is written only when something changed: the contacts (large, they change rarely) and the call
+        lists (small, they change at every call) are two files. calls=False leaves the call lists in memory only.
+        Each file is written whole next to the old one and then swapped in: a power cut leaves the old or the new
+        one, never a piece. Returns which files were written."""
+        written = []
+        if self._write_if_changed(path, {k: v for k, v in self.books.items() if k == "pb"}):
+            written.append("contacts")
+        if calls and self._write_if_changed(self.calls_path(path), {k: v for k, v in self.books.items() if k != "pb"}):
+            written.append("calls")
+        return written
 
     def search(self, folder: str, attr: int, value: str) -> list:
         """Matching (handle, card) pairs: attr 0 name, 1 number (last 9 digits: with or without +39 is the same)."""

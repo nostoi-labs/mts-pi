@@ -9,6 +9,8 @@ User=@USER@
 Environment=XDG_RUNTIME_DIR=/run/user/@UID@
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/@UID@/bus
 EnvironmentFile=-/etc/default/mtspi
+# where the logs go on the protected card (written at every start by mtspi-logs); absent elsewhere
+EnvironmentFile=-/run/mtspi-logs.env
 # runs only with HFP_AG=1; with HFP_AG=0 the Pi does not offer itself to the bike as a phone.
 # In the pro variant (RADIO=esp32phone|pro) the phone role belongs to the external radio.
 ExecCondition=/bin/sh -c '. /etc/default/mtspi 2>/dev/null; [ "${HFP_AG:-0}" = 1 ] && [ "${RADIO:-internal}" != esp32phone ] && [ "${RADIO:-internal}" != pro ]'
@@ -17,6 +19,9 @@ ExecStart=@REPO@/.venv/bin/python -m mtspi.hfp_ag
 # SCO voice must not wait for the video frame encoding of the bridge (bursts lead to a radio "hardware error")
 CPUSchedulingPolicy=rr
 CPUSchedulingPriority=20
+# the program says "alive" every few seconds. This long time covers its start; once running it asks systemd for
+# 30 s itself (mtspi/alive.py): silent for that long = stuck, systemd ends it and starts it again
+WatchdogSec=120
 Restart=on-failure
 RestartSec=3
 

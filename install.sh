@@ -8,7 +8,8 @@
 # Tested on: Raspberry Pi 3 Model A+, Raspberry Pi OS Lite 64-bit (Debian 13 "trixie").
 # It can be run again at any time (after an update of the repository, or to change the name).
 # It does not touch the boot files (config.txt, cmdline.txt) and does not remove Bluetooth pairings.
-# (Only the card image, built with --image, gets a leaner config.txt: see the end of this file.)
+# (Only the card image, built with --image, gets a leaner config.txt and the protection against power cuts:
+# see the end of this file.)
 #
 # --image is used only by image/build.sh: it installs into a system image that is not running (as root, in a
 # chroot), creates the service user "mtspi" and skips everything that needs a live system.
@@ -81,13 +82,14 @@ say "Python environment"
 .venv/bin/python -c "import mtspi.bridge, mtspi.hfp_ag" || { echo "the program does not load: see the error above"; exit 1; }
 live || chown -R "$U:$U" "$REPO"
 
-say "data folder, groups, the two commands the bridge runs as root"
+say "data folder, groups, the three commands the bridge runs as root"
 $SUDO mkdir -p /var/lib/mtspi
 $SUDO chown "$U:$U" /var/lib/mtspi
 $SUDO usermod -aG plugdev,netdev,bluetooth,audio "$U"
 getent group video >/dev/null && $SUDO usermod -aG video "$U"    # vcgencmd (temperature, under-voltage)
-# the bridge removes a stale Wi-Fi Direct interface (iw) and asks the bike for an address (dhcpcd)
-echo "$U ALL=(root) NOPASSWD: /usr/sbin/iw, /usr/sbin/dhcpcd" | $SUDO tee /etc/sudoers.d/mtspi >/dev/null
+# the bridge removes a stale Wi-Fi Direct interface (iw), asks the bike for an address (dhcpcd) and sets the clock
+# from the iPhone's time when there is no internet (date)
+echo "$U ALL=(root) NOPASSWD: /usr/sbin/iw, /usr/sbin/dhcpcd, /usr/bin/date" | $SUDO tee /etc/sudoers.d/mtspi >/dev/null
 $SUDO chmod 440 /etc/sudoers.d/mtspi
 $SUDO visudo -cf /etc/sudoers.d/mtspi >/dev/null || { $SUDO rm -f /etc/sudoers.d/mtspi; echo "sudoers rule not valid, removed"; exit 1; }
 
@@ -155,6 +157,13 @@ live && { $SUDO systemctl reload NetworkManager || true; }
 say "names shown to the bike and to the iPhone"
 $SUDO system/names.sh "$NAME"
 
+say "watchdog: the Pi is reset only as a last resort, a stuck program is restarted alone"
+# Raspberry Pi OS resets the whole Pi when systemd is silent for one minute (hardware watchdog). A reset is a blunt
+# tool: the card stays powered and may be in the middle of an operation. It is kept as the last resort, with more
+# patience; a program of ours that gets stuck is restarted alone (WatchdogSec in its unit), without touching the Pi.
+$SUDO mkdir -p /etc/systemd/system.conf.d
+printf '[Manager]\nRuntimeWatchdogSec=3min\nRebootWatchdogSec=5min\n' | $SUDO tee /etc/systemd/system.conf.d/50-mtspi-watchdog.conf >/dev/null
+
 say "system log kept on the SD card (it survives the bike cutting the power)"
 $SUDO mkdir -p /etc/systemd/journald.conf.d
 printf '[Journal]\nStorage=persistent\nSyncIntervalSec=10s\nSystemMaxUse=200M\n' | $SUDO tee /etc/systemd/journald.conf.d/50-mtspi.conf >/dev/null
@@ -178,12 +187,13 @@ else
     mkdir -p /var/lib/systemd/linger && touch "/var/lib/systemd/linger/$U"
     systemctl --global disable mpris-proxy.service 2>/dev/null || true
 fi
-for u in system/units/*.service; do
+for u in system/units/*.service system/units/*.path; do
     sed -e "s#@REPO@#$REPO#g" -e "s#@USER@#$U#g" -e "s#@UID@#$UID_N#g" "$u" | $SUDO tee "/etc/systemd/system/$(basename "$u")" >/dev/null
 done
 live && $SUDO systemctl daemon-reload
 $SUDO systemctl disable mtspi-p2p 2>/dev/null || true    # started and stopped by mtspi-wifi-mode
 $SUDO systemctl enable ofono mtspi-setup mtspi-firstboot mtspi-adapters mtspi-hfp mtspi-wifi-mode mtspi-btcentral mtspi-bridge
+$SUDO systemctl enable mtspi-tpms 2>/dev/null || true     # experimental, runs only with TPMS=1 in the settings
 if live; then
     $SUDO rfkill unblock bluetooth   # Raspberry Pi OS leaves it blocked at first boot
     $SUDO systemctl restart bluetooth ofono
@@ -235,6 +245,56 @@ else
         printf 'blacklist bcm2835_codec\nblacklist bcm2835_isp\nblacklist bcm2835_v4l2\nblacklist snd_bcm2835\n' > /etc/modprobe.d/mtspi-lean.conf
     else
         warn "boot file left as it is (config.txt or the cut-down firmware not found, or gpu_mem already set)"
+    fi
+
+    say "card protected against power cuts (card image only: it needs the data and log partitions made by image/build.sh)"
+    # What each piece is for: system/protect.sh. The first start of the card is still writable; when it is over
+    # mtspi-firstboot switches the protection on and the Pi restarts once.
+    env DEBIAN_FRONTEND=noninteractive apt-get install -y -q overlayroot
+    mkdir -p /data /log /var/lib/mtspi-logs /var/lib/bluetooth
+    ln -sf "$REPO/system/protect.sh" /usr/local/sbin/mtspi-protect
+    BOOTDEV=$(awk '$2 == "/boot/firmware" {print $1}' /etc/fstab)
+    grep -E '^proc|[[:space:]]/[[:space:]]+ext4' /etc/fstab > /etc/fstab.new
+    {
+        # every mount is "nofail" with a short wait: a partition that does not answer never keeps the Pi from starting
+        echo "$BOOTDEV  /boot/firmware  vfat  defaults,nofail,x-systemd.device-timeout=10s  0  0"
+        echo "LABEL=mtspi-data  /data  ext4  noatime,data=journal,nofail,x-systemd.device-timeout=10s  0  0"
+        echo "LABEL=mtspi-log   /log   ext4  noatime,commit=15,nofail,noauto,x-systemd.device-timeout=10s  0  0"
+        for b in mtspi:/var/lib/mtspi nm:/etc/NetworkManager/system-connections default:/etc/default; do
+            echo "/data/${b%%:*}  ${b#*:}  none  bind,nofail,x-systemd.requires-mounts-for=/data  0  0"
+        done
+        # Bluetooth pairings live in memory (BlueZ rewrites its files at every power-on); mtspi-btstore keeps the copy on /data
+        echo "tmpfs  /var/lib/bluetooth  tmpfs  size=4m,mode=0700,nosuid,nodev  0  0"
+        echo "tmpfs  /var/lib/mtspi-logs  tmpfs  size=24m,mode=0755,uid=$UID_N,gid=$(id -g "$U"),nosuid,nodev  0  0"
+    } >> /etc/fstab.new
+    mv /etc/fstab.new /etc/fstab
+    # logs in memory, with a ceiling (on the card only with LOGS=card in mtspi.txt: system/logs.sh)
+    printf '[Journal]\nStorage=auto\nSyncIntervalSec=10s\nSystemMaxUse=40M\nRuntimeMaxUse=12M\n' > /etc/systemd/journald.conf.d/50-mtspi.conf
+    rm -rf /var/log/journal
+    # no swap file on the card: compressed memory only
+    mkdir -p /etc/rpi/swap.conf.d
+    printf '[Main]\nMechanism=zram\n' > /etc/rpi/swap.conf.d/50-mtspi.conf
+    # with the layer in memory the system partition is not remounted from fstab
+    mkdir -p /etc/systemd/system/systemd-remount-fs.service.d
+    printf '[Unit]\nConditionKernelCommandLine=!overlayroot\n' > /etc/systemd/system/systemd-remount-fs.service.d/50-mtspi.conf
+    # systemd's emergency mode waits for somebody at a keyboard: on a bike there is nobody, so the Pi restarts
+    for u in emergency rescue; do
+        mkdir -p /etc/systemd/system/$u.service.d
+        printf '[Service]\nExecStart=\nExecStart=/bin/sh -c "echo MTS Pi: emergency mode, restarting in 10 s > /dev/kmsg; sleep 10; systemctl --force reboot"\n' > /etc/systemd/system/$u.service.d/50-mtspi.conf
+    done
+    # The weekly clean-up of free space: with a read-only system the date of the last one is never saved, so it would
+    # start again at EVERY power-on, within 100 minutes, keeping the data partition busy (measured: 34 s).
+    systemctl disable fstrim.timer >/dev/null 2>&1 || true; systemctl mask fstrim.timer >/dev/null 2>&1 || true
+    systemctl enable mtspi-data-check mtspi-logs mtspi-btstore-load mtspi-btstore mtspi-clock-load mtspi-clock-save.path mtspi-protect
+    # the data partition starts with a copy of what the system holds now
+    if mountpoint -q /data; then
+        for b in bluetooth:/var/lib/bluetooth mtspi:/var/lib/mtspi nm:/etc/NetworkManager/system-connections default:/etc/default; do
+            mkdir -p "${b#*:}"
+            [ -d "/data/${b%%:*}" ] || cp -a "${b#*:}" "/data/${b%%:*}"
+        done
+        chmod 700 /data/bluetooth
+    else
+        warn "no data partition mounted on /data: the card will not be protected (image/build.sh mounts it)"
     fi
     say "done (image)"
 fi

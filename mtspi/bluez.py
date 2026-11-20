@@ -181,7 +181,7 @@ class BtState:
         self.bus = None
         self.iphone = None        # {"mac", "name", "adapter"}
         self.bike = None
-        self.cind = {}            # battchg 0-5, signal 0-5, service
+        self.cind = {}            # battchg 0-5, signal 0-5, service, roam
         self.operator = None
         self.call = None          # {"state", "name", "number"}
         self.media = None         # {"title", "artist", "status"}
@@ -243,6 +243,7 @@ class BtState:
                 if "Strength" in nr:
                     self.cind["signal"] = min(5, round(int(_v(nr["Strength"])) / 20))
                 self.cind["service"] = 1 if _v(nr.get("Status")) in ("registered", "roaming") else 0
+                self.cind["roam"] = 1 if _v(nr.get("Status")) == "roaming" else 0
                 self.operator = _v(nr.get("Name"))
             if "org.ofono.VoiceCallManager" in ifaces:
                 calls = (await call(self.bus, "org.ofono", path, "org.ofono.VoiceCallManager", "GetCalls"))[0]

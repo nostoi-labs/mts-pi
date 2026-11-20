@@ -24,20 +24,50 @@ from mtspi.testui import TestScreen  # noqa: E402
 
 
 class JsonLog:
-    """One JSON line per event. On SD every line is written immediately (fsync): the Pi can lose power at any moment."""
+    """One JSON line per event.
+    MTSPI_LOG_SYNC=1 (default): every line is flushed to the card at once (fsync), so that the last lines survive
+    when the bike cuts the power. With the log kept in memory (MTSPI_LOG_SYNC=0) that would be pointless work.
+    MTSPI_LOG_MAX_MB: when the file grows past this size it is renamed to <name>.1 (the previous .1 is dropped)
+    and a new one is started: a log kept in memory cannot be allowed to grow without limit. 0 = no limit.
+    A log that cannot be written (card full or read-only) never stops the program: the file is given up, the
+    lines still go to the system journal."""
 
     def __init__(self, path: str | None, quiet: bool = False):
-        self.f = open(path, "a", buffering=1) if path else None
+        self.path = path
         self.quiet = quiet
         self.t0 = time.monotonic()
+        self.sync = os.environ.get("MTSPI_LOG_SYNC", "1") != "0"
+        try:
+            self.max_bytes = int(float(os.environ.get("MTSPI_LOG_MAX_MB", "0")) * 1024 * 1024)
+        except ValueError:
+            self.max_bytes = 0
+        self.size = 0
+        self.f = None
+        if path:
+            try:
+                self.f = open(path, "a", buffering=1)
+                self.size = self.f.tell()
+            except OSError as e:
+                print(json.dumps({"event": "log_file_unavailable", "error": str(e)}), flush=True)
 
     def __call__(self, event: str, **fields) -> None:
         rec = {"t": round(time.time(), 3), "s": round(time.monotonic() - self.t0, 3), "side": "pi", "event": event, **fields}
         line = json.dumps(rec, ensure_ascii=False, default=str)
         if self.f:
-            self.f.write(line + "\n")
-            self.f.flush()
-            os.fsync(self.f.fileno())
+            try:
+                self.f.write(line + "\n")
+                self.f.flush()
+                if self.sync:
+                    os.fsync(self.f.fileno())
+                self.size += len(line) + 1
+                if self.max_bytes and self.size > self.max_bytes:
+                    self.f.close()
+                    os.replace(self.path, self.path + ".1")
+                    self.f = open(self.path, "a", buffering=1)
+                    self.size = 0
+            except (OSError, ValueError) as e:
+                self.f = None
+                print(json.dumps({"event": "log_file_given_up", "error": str(e)}), flush=True)
         if not self.quiet:
             print(line, flush=True)
 
@@ -143,10 +173,21 @@ async def join_p2p(creds: dict, log) -> None:
         raise ConnectionError("Wi-Fi Direct: group not formed")
     # NetworkManager ignores p2p-wlan0-* (conf.d/99-mtspi-p2p.conf): "nmcli device set ... managed no" here
     # tore down the freshly formed group. IP from the bike, no gateway (the default route stays where it is)
+    # -A: no ARP probe of the offered address. The bike always offers the same one and the probe alone cost 4.6-4.9 s
+    # in each of the three joins of the 16/11 ride (of 6-9 s spent getting the address).
+    t_group = time.monotonic()
     proc = await loop.run_in_executor(
-        None, lambda: run(["sudo", "-n", "/usr/sbin/dhcpcd", "-1", "-4", "-G", "-t", "20", iface], timeout=40))
+        None, lambda: run(["sudo", "-n", "/usr/sbin/dhcpcd", "-1", "-4", "-A", "-G", "-t", "20", iface], timeout=40))
     _, has_ip = await loop.run_in_executor(None, group_iface)
+    # network name and frequency of the bike's group: on 16/11 the name was different at every join
+    net = {}
+    try:
+        st = await loop.run_in_executor(None, lambda: cli("status", iface=iface))
+        net = {k: v for k, v in (ln.split("=", 1) for ln in st.splitlines() if "=" in ln) if k in ("ssid", "freq")}
+    except Exception:
+        pass
     log("p2p_joined" if has_ip else "p2p_dhcp_failed", iface=iface, code=proc.returncode,
+        address_s=round(time.monotonic() - t_group, 1), **net,
         output=(proc.stdout + proc.stderr).strip()[-200:])
     if not has_ip:
         raise ConnectionError("Wi-Fi Direct: no IP address from the bike")
@@ -238,7 +279,7 @@ async def main() -> int:
     ap.add_argument("--jpeg-quality", type=int, default=80)
     ap.add_argument("--log", default=None, help="JSONL file (on the Pi: on the SD card)")
     ap.add_argument("--ap-credentials-file", default=None,
-                    help="where to save the bike's Wi-Fi SSID/password (mode 600 file; on the Pi: /var/lib/mtspi/ap.jsonl)")
+                    help="where to save the bike's Wi-Fi SSID/password (mode 600 file; on the Pi: in the folder of the run's log)")
     ap.add_argument("--once", action="store_true", help="one session only, then exit")
     ap.add_argument("--vehicle-keys", type=int, default=128, help="ask the bike for vehicle data with codes 1..N (0 = no)")
     ap.add_argument("--bt-info", default=None, help='string for the bike, e.g. "[HFP,A2DP]MTS Pi" (connected audio profiles + BT name)')

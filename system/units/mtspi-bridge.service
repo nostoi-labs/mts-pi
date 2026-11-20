@@ -14,7 +14,12 @@ Environment=XDG_RUNTIME_DIR=/run/user/@UID@
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/@UID@/bus
 # settings: edit /etc/default/mtspi, then  sudo systemctl restart mtspi-bridge
 EnvironmentFile=-/etc/default/mtspi
+# where the logs go on the protected card (written at every start by mtspi-logs); absent elsewhere
+EnvironmentFile=-/run/mtspi-logs.env
 ExecStart=@REPO@/system/run.sh
+# the program says "alive" every few seconds. This long time covers its start; once running it asks systemd for
+# 30 s itself (mtspi/alive.py): silent for that long = stuck, systemd ends it and starts it again
+WatchdogSec=120
 Restart=always
 RestartSec=3
 

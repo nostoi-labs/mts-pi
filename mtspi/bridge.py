@@ -42,6 +42,7 @@ from mtspi.settings import Settings  # noqa: E402
 from myspin.phone import PhoneControl, PhoneProjection, discover_vehicle  # noqa: E402
 from PIL import Image, ImageDraw  # noqa: E402
 from mtspi.tasks import spawn
+from mtspi import alive  # noqa: E402
 
 # Siri from the helmet (the joystick held down, the bike's phone button): works on the bench since 17 Nov 2026, not yet
 # tried on the bike, so it is off unless HFP_VR=1 (the same switch that lets the hands-free open the voice without a call).
@@ -1100,6 +1101,7 @@ class Bridge:
             extra = []
         if self.a.pbap != "none":
             extra.append(self.pbap_server())
+        self._alive = alive.start()         # a stuck main loop gets the program restarted by systemd (WatchdogSec)
         await asyncio.gather(*(fn() for spec, fn in parts if spec != "none"), self.myspin(), self.stats(), self.manual_cmds(),
                              self.call_video_limit(), *extra)
 
@@ -1165,6 +1167,7 @@ class Bridge:
         self.spawn(mns.serve_mns(self.log, lambda ev: self._sms_event.set() if ev.get("type") == "NewMessage" else None))
         routed_call = None
         pulled_for = None
+        levels_sent = None
         while True:
             try:
                 await st.poll()
@@ -1178,6 +1181,12 @@ class Bridge:
             if self.a.bike_audio == "none":         # with the bike port connected (standard variant + Carlinkit) self.bike is that port
                 self.bike = _Present(st.bike) if st.bike else None
             self.cind = dict(st.cind)
+            # The iPhone's real battery and signal go on to the bike whenever they change. Until 20 Nov 2026 they stopped
+            # here: the bike side kept the values it starts with (signal 5, battery 5) for the whole ride.
+            levels = {k: st.cind[k] for k in ("service", "signal", "roam", "battchg") if k in st.cind}
+            if levels and self.bike and self.a.bike_audio != "none" and (levels, id(self.bike)) != levels_sent:
+                levels_sent = (levels, id(self.bike))
+                self.to_bike({"type": "hfp", "event": "indicators", "cind": levels, "device": self.a.bt_name})
             if not (self.call and self.call.get("src") == "carplay"):   # the CarPlay call is handled by the Carlinkit
                 self.call = dict(st.call, audio="bt") if st.call else None
             self.media = st.media
@@ -1190,6 +1199,8 @@ class Bridge:
                 pulled_for = st.iphone["mac"]
                 self.spawn(self.pull_contacts(st.iphone["mac"], st.iphone.get("adapter")))
                 self.spawn(self.pull_sms(st.iphone["mac"], st.iphone.get("adapter")))
+                if os.environ.get("PHONE_TIME", "1") != "0":
+                    self.spawn(self.phone_time(st.iphone["mac"]))
             if not st.iphone:
                 pulled_for = None
                 # pro: the internal radio is neither discoverable nor listening, so the Pi reconnects the paired iPhone
@@ -1273,6 +1284,21 @@ class Bridge:
             except asyncio.TimeoutError:
                 pass
 
+    async def phone_time(self, mac):
+        """Once per connection: the time of day from the iPhone, for a Pi that has no internet to ask (mtspi/phonetime.py)."""
+        from mtspi import phonetime
+        loop = asyncio.get_running_loop()
+        for wait in (4, 20, 60):                    # not in the first seconds of the link; two more tries if no answer
+            await asyncio.sleep(wait)
+            if not self.bt or not self.bt.iphone or self.bt.iphone.get("mac") != mac:
+                return
+            events = []                             # the read runs in a thread: its log lines are written from here
+            done = await loop.run_in_executor(None, lambda: phonetime.sync(mac, lambda ev, **kw: events.append((ev, kw))))
+            for ev, kw in events:
+                self.log(ev, **kw)
+            if done:
+                return
+
     async def pull_contacts(self, mac, adapter=None):
         # Right after connecting obexd may not be ready, and without "Sync Contacts" the iPhone answers with 0 entries:
         # retry until the phonebook arrives (then every 5 minutes, for anyone who grants the permission later).
@@ -1293,7 +1319,12 @@ class Bridge:
                 if self.contacts:
                     self.phonebook.update(books)
                     if self.a.phonebook_cache:
-                        self.phonebook.save(self.a.phonebook_cache)
+                        try:
+                            written = self.phonebook.save(self.a.phonebook_cache,
+                                                          calls=os.environ.get("PHONEBOOK_SAVE_CALLS", "1") != "0")
+                            self.log("phonebook_saved", written=written)
+                        except OSError as e:            # card full or read-only: the phonebook stays in memory
+                            self.log("phonebook_save_error", error=str(e))
                     return
                 self.log("pbap_empty", retry_in=wait)
             except Exception as e:
@@ -1311,7 +1342,7 @@ if __name__ == "__main__":
     ap.add_argument("--bt", default="emulated", choices=["emulated", "real"],
                     help="real = real Bluetooth on the Pi (BlueZ, oFono, PipeWire); emulated = bench")
     ap.add_argument("--ap-credentials-file", default=None,
-                    help="where to save the bike's Wi-Fi SSID/password (mode 600 file; on the Pi: /var/lib/mtspi/ap.jsonl)")
+                    help="where to save the bike's Wi-Fi SSID/password (mode 600 file; on the Pi: in the folder of the run's log)")
     ap.add_argument("--vehicle-keys", type=int, default=128, help="ask the bike for vehicle data with codes 1..N (0 = no)")
     ap.add_argument("--control", default="tcp:9150")
     ap.add_argument("--wifi", default="none", choices=["none", "nmcli"])

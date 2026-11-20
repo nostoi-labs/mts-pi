@@ -1,0 +1,12 @@
+[Unit]
+Description=MTS Pi: the clock restarts from the last time the Pi knew the real time
+DefaultDependencies=no
+After=data.mount
+ConditionPathExists=/data/clock
+
+[Service]
+Type=oneshot
+ExecStart=@REPO@/system/clock.sh load
+
+[Install]
+WantedBy=sysinit.target

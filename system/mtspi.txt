@@ -17,3 +17,12 @@ SSH_KEY=
 # Siri from the helmet: in CarPlay, hold the joystick down for one second. Experimental: it works on our bench
 # and has not been proven on the road yet. Write on to try it, off to switch it off again.
 SIRI=
+
+# The card is protected against power cuts: while the Pi works nothing is written to it, so the bike can cut
+# the power at any moment. Write off only when you want to change the system yourself (updates, experiments):
+# the Pi restarts once and stays writable until you write on again or delete the word.
+PROTECT=
+
+# Logs are kept in memory and are gone at power-off. Write card to keep them on the card, in a partition of
+# their own (useful when reporting a problem: see "Logs" in the README).
+LOGS=

@@ -398,6 +398,11 @@ Logs: `journalctl -u mtspi-bridge -u mtspi-hfp -u mtspi-wifi-mode`, plus one fol
 - The socket in the tank compartment stays on for a few seconds after key-off and then cuts the power: the Pi is
   switched off abruptly every time, and the SD card is not protected against that yet. Keep a copy of the card
   once it works.
+- Rarely, the Pi can stay stuck after restarting itself: red light steady, green light off, nothing on the
+  dashboard. On our bench this happened only when a restart was forced while the SD card was busy, most easily
+  in the first seconds of start-up; never with an orderly restart and never after a plain power cut. Nothing is
+  lost. Take the power away for a few seconds and give it back: unplug the Pi's power cable and plug it in
+  again, or switch the dashboard off and on.
 - Summer heat has not been tried. The one evening on the bike was at 15 °C outside, and the Pi stayed between
   27 and 41 °C in the closed tank compartment (ours is the one without the fan). It will be warmer in summer and we have no numbers yet; a Pi 3 A+
   starts slowing itself down at 60 °C. Ducati makes a version of that compartment with a small fan, meant to

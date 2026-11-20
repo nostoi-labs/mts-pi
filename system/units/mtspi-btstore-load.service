@@ -1,0 +1,15 @@
+[Unit]
+Description=MTS Pi: Bluetooth pairings are loaded into memory from the data partition
+After=data.mount mtspi-data-check.service
+Wants=data.mount
+RequiresMountsFor=/var/lib/bluetooth
+Before=bluetooth.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=30
+ExecStart=/usr/bin/python3 @REPO@/mtspi/btstore.py load
+
+[Install]
+WantedBy=bluetooth.service

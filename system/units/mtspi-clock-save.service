@@ -1,0 +1,8 @@
+[Unit]
+Description=MTS Pi: the real time is kept on the data partition (once per power-on)
+After=data.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=@REPO@/system/clock.sh save
