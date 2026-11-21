@@ -24,7 +24,7 @@ class Dashboard:
     def __init__(self, bridge):
         self.b = bridge
         self.focus = "carplay_main"
-        self.page = "home"          # home | diag | settings
+        self.page = "home"          # home | diag | settings | tyres
         self.set_row = 0
         self._v = 0
 
@@ -33,6 +33,8 @@ class Dashboard:
         out = ["carplay_main"]
         if self.b.carplay_state() != "off":
             out.append("carplay_off")
+        if self.b.tyres_enabled():
+            out.append("tyres")
         out += ["diag", "settings"]
         return out
 
@@ -44,6 +46,8 @@ class Dashboard:
         st = b.carplay_state()
         if self.page == "diag":
             tick = int(time.monotonic() * 2)            # live numbers
+        elif self.page == "tyres":
+            tick = int(time.monotonic() / 5)            # the age of the readings
         elif self.page == "home" and st == "connecting":
             tick = int(time.monotonic() * 10)           # spinning ring and scrolling dashes
         else:
@@ -61,7 +65,7 @@ class Dashboard:
             self.settings_key(key)
             self.bump()
             return
-        if self.page == "diag":
+        if self.page in ("diag", "tyres"):
             if key in ("BACK", "OK"):
                 self.page = "home"
             self.bump()
@@ -80,6 +84,8 @@ class Dashboard:
             elif self.focus == "carplay_off":
                 self.b.request_carplay_off()
                 self.focus = "carplay_main"
+            elif self.focus == "tyres":
+                self.page = "tyres"
             elif self.focus == "diag":
                 self.page = "diag"
             elif self.focus == "settings":
@@ -97,6 +103,9 @@ class Dashboard:
             return img
         if self.page == "settings":
             self.render_settings(d, W, H, u)
+            return img
+        if self.page == "tyres":
+            self.render_tyres(d, W, H, u)
             return img
         pad = int(10 * u)
         gap = int(10 * u)
@@ -236,11 +245,19 @@ class Dashboard:
         # buttons
         py1 = y1 - int(14 * u)
         py0 = py1 - int(42 * u)
-        mid = (x0 + x1) // 2
-        ui.pill(d, [x0 + int(14 * u), py0, mid - int(5 * u), py1], t("btn_diag"), font(int(15 * u), "semibold"),
-                FILL, focus=self.focus == "diag")
-        ui.pill(d, [mid + int(5 * u), py0, x1 - int(14 * u), py1], t("btn_settings"), font(int(15 * u), "semibold"),
-                FILL, focus=self.focus == "settings")
+        buttons = [("diag", t("btn_diag")), ("settings", t("btn_settings"))]
+        if self.b.tyres_enabled():
+            buttons.insert(0, ("tyres", t("btn_tyres")))
+        bx0, bx1, gap = x0 + int(14 * u), x1 - int(14 * u), int(8 * u)
+        # widths in proportion to the labels, so that three buttons fit where two were
+        f = font(int((15 if len(buttons) == 2 else 13.5) * u), "semibold")
+        want = [d.textlength(label, font=f) + int(26 * u) for _, label in buttons]
+        scale = (bx1 - bx0 - gap * (len(buttons) - 1)) / sum(want)
+        x = bx0
+        for (name, label), w in zip(buttons, want):
+            x2 = x + int(w * scale)
+            ui.pill(d, [x, py0, x2, py1], label, f, FILL, focus=self.focus == name)
+            x = x2 + gap
 
     def node(self, d, xy, label, kind, ok, u, small=False):
         x, y = xy
@@ -292,6 +309,59 @@ class Dashboard:
                 d.text((x0 + cw - int(12 * u), y), str(v), font=font(int(11 * u), "semibold"), fill=TEXT, anchor="ra")
                 y += int(16.5 * u)
 
+    # Tyres --------------------------------------------------------------------
+    def render_tyres(self, d, W, H, u):
+        pad = int(10 * u)
+        d.text((pad + int(6 * u), int(10 * u)), t("tyres"), font=font(int(18 * u), "bold"), fill=TEXT)
+        d.text((W - pad - int(6 * u), int(12 * u)), t("tyres_back"), font=font(int(12 * u), "medium"), fill=CYAN, anchor="ra")
+        info = self.b.tyres()
+        wheels = info["wheels"]
+        top, gap = int(38 * u), int(10 * u)
+        if not wheels:
+            box = (pad, top, W - pad, H - pad)
+            ui.card(d, box, radius=int(14 * u))
+            cx, cy = W // 2, (top + H - pad) // 2
+            d.text((cx, cy - int(12 * u)), t("ty_wait") if info["listening"] else t("ty_off"),
+                   font=font(int(20 * u), "semibold"), fill=TEXT if info["listening"] else ORANGE, anchor="mm")
+            if info["listening"]:
+                d.text((cx, cy + int(18 * u)), t("ty_wait_sub"), font=font(int(13 * u), "medium"), fill=SECONDARY, anchor="mm")
+            return
+        n = min(len(wheels), 3)
+        cw = (W - 2 * pad - gap * (n - 1)) // n
+        for i, w in enumerate(wheels[:n]):
+            x0 = pad + i * (cw + gap)
+            box = (x0, top, x0 + cw, H - pad)
+            ui.card(d, box, radius=int(14 * u))
+            name = {"front": t("ty_front"), "rear": t("ty_rear")}.get(w["wheel"]) or t("ty_sensor")
+            d.text((x0 + int(16 * u), top + int(12 * u)), name, font=font(int(16 * u), "semibold"), fill=TEXT)
+            d.text((x0 + cw - int(16 * u), top + int(15 * u)), w["id"], font=font(int(11 * u), "medium"), fill=TERTIARY, anchor="ra")
+            # the pressure, large; orange or red when it is under the recommended one
+            rec = w.get("recommended")
+            col = TEXT
+            if rec and w["bar"] is not None:
+                col = RED if w["bar"] < rec[0] - 0.4 else ORANGE if w["bar"] < rec[0] - 0.2 else GREEN
+            stale = w["age_s"] > 600
+            big = font(int(70 * u), "bold")
+            txt = f"{w['bar']:.2f}" if w["bar"] is not None else "–"
+            by = top + int(96 * u)
+            d.text((x0 + int(16 * u), by), txt, font=big, fill=TERTIARY if stale else col, anchor="lm")
+            tw = d.textlength(txt, font=big)
+            d.text((x0 + int(22 * u) + tw, by + int(16 * u)), "bar", font=font(int(18 * u), "semibold"), fill=SECONDARY, anchor="lm")
+            if w["temp_c"] is not None:
+                d.text((x0 + cw - int(16 * u), by - int(4 * u)), f"{w['temp_c']:.0f} °C", font=font(int(26 * u), "semibold"),
+                       fill=TERTIARY if stale else TEXT, anchor="rm")
+            y = top + int(150 * u)
+            age = w["age_s"]
+            small = [t("ty_ago_s", v=int(age)) if age < 90 else t("ty_ago_min", v=int(age // 60))]
+            if w["volt"] is not None:
+                small.append(t("ty_battery", v=f"{w['volt']:.1f}"))
+            d.text((x0 + int(16 * u), y), "  ·  ".join(small), font=font(int(13 * u), "medium"),
+                   fill=ORANGE if stale else SECONDARY)
+            if rec:
+                a = f"{rec[0]:.1f}"
+                line = t("ty_recommended", a=a, b=f"{rec[1]:.1f}") if len(rec) > 1 and rec[1] != rec[0] else t("ty_recommended_1", a=a)
+                d.text((x0 + int(16 * u), y + int(22 * u)), line + " bar", font=font(int(13 * u), "medium"), fill=TERTIARY)
+
     # Settings ----------------------------------------------------------------
     def settings_rows(self):
         st = self.b.settings
@@ -300,6 +370,7 @@ class Dashboard:
             ("autostart", t("s_autostart"), t("s_auto") if st.carplay_autostart else t("s_on_demand")),
             ("idle", t("s_idle"), idle_label(st.carplay_idle_off)),
             ("quality", t("s_quality"), quality_label(st.jpeg_quality)),
+            ("back", t("s_back"), ""),           # the joystick has no Back key: a row that does it (and hold ↑ too)
         ]
 
     def settings_key(self, key):
@@ -319,6 +390,11 @@ class Dashboard:
             return
         step = -1 if key == "LEFT" else 1
         what = rows[self.set_row][0]
+        if what == "back":
+            if key == "OK":
+                self.b.save_settings()
+                self.page = "home"
+            return
         if what == "lang":
             langs = i18n.LANGS
             st.lang = langs[(langs.index(st.lang) + step) % len(langs)]
@@ -339,13 +415,16 @@ class Dashboard:
         d.text((W - pad - int(6 * u), int(12 * u)), t("settings_help"), font=font(int(12 * u), "medium"), fill=CYAN, anchor="ra")
         rows = self.settings_rows()
         top = int(42 * u)
-        rh = int(58 * u)
-        for i, (_, label, value) in enumerate(rows):
-            y0 = top + i * (rh + int(4 * u))
-            if y0 + rh > H - pad:
-                break
+        sp = int(4 * u)
+        rh = min(int(58 * u), (H - pad - top - sp * (len(rows) - 1)) // len(rows))      # every row fits, the last one too
+        for i, (what, label, value) in enumerate(rows):
+            y0 = top + i * (rh + sp)
             box = (pad, y0, W - pad, y0 + rh)
             ui.card(d, box, radius=int(14 * u), focus=i == self.set_row)
+            if what == "back":
+                d.text((W // 2, y0 + rh // 2), "‹  " + label, font=font(int(16 * u), "semibold"),
+                       fill=CYAN if i == self.set_row else SECONDARY, anchor="mm")
+                continue
             d.text((pad + int(18 * u), y0 + rh // 2), label, font=font(int(16 * u), "semibold"), fill=TEXT, anchor="lm")
             vx = W - pad - int(18 * u)
             d.text((vx, y0 + rh // 2), f"‹  {value}  ›" if i == self.set_row else value,

@@ -6,6 +6,8 @@ After=bluetooth.service mtspi-adapters.service mtspi-logs.service mtspi-setup.se
 User=@USER@
 # asking the radio to scan needs these two; nothing else runs as root
 AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+# what was last heard, for the tyre page on the dashboard (memory only)
+RuntimeDirectory=mtspi-tpms
 # TPMS=1 switches it on (TPMS=on in mtspi.txt). Optional: TPMS_WINDOW_MS, TPMS_INTERVAL_MS, TPMS_ON_S, TPMS_OFF_S,
 # TPMS_FRONT, TPMS_REAR
 EnvironmentFile=-/etc/default/mtspi

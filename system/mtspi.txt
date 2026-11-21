@@ -14,8 +14,9 @@ WIFI_PASSWORD=
 # "mtspi", with administrator rights:  ssh mtspi@mts-pi.local
 SSH_KEY=
 
-# Siri from the helmet: in CarPlay, hold the joystick down for one second. Experimental: it works on our bench
-# and has not been proven on the road yet. Write on to try it, off to switch it off again.
+# Siri from the helmet: in CarPlay, hold the joystick down for one second, wait for the bike's tone in the helmet
+# (about three seconds) and speak. The dashboard shows a call while Siri listens. Write on to use it, off to switch
+# it off again.
 SIRI=
 
 # The card is protected against power cuts: while the Pi works nothing is written to it, so the bike can cut

@@ -43,10 +43,15 @@ from myspin.phone import PhoneControl, PhoneProjection, discover_vehicle  # noqa
 from PIL import Image, ImageDraw  # noqa: E402
 from mtspi.tasks import spawn
 from mtspi import alive  # noqa: E402
+from mtspi import recovery  # noqa: E402
 
 # Siri from the helmet (the joystick held down, the bike's phone button): works on the bench since 17 Nov 2026, not yet
 # tried on the bike, so it is off unless HFP_VR=1 (the same switch that lets the hands-free open the voice without a call).
 SIRI_ENABLED = os.environ.get("HFP_VR", "0") == "1"
+# SIRI_WAIT_MIC=1: the command goes to CarPlay only when the helmet microphone is open. Off by default: on the bike
+# (21 Nov 2026) Siri was started at once and it worked, because the bike plays a tone in the helmet when it has
+# connected it, and that is when the rider speaks. The wait has been tried on the bench only.
+SIRI_WAIT_MIC = os.environ.get("SIRI_WAIT_MIC", "0") == "1"
 
 
 def oem_icon_png(label: str, path: str = "") -> bytes:
@@ -115,6 +120,20 @@ class Display:
         if action not in ("PRESS", "CLICK", "LONG_PRESS", "RELEASE"):
             return
         if self.mode != "carplay":
+            # The Pi's own pages: the joystick held up is Back here too. On the bike (21 Nov 2026) there was no way
+            # out of Settings, which waited for a Back key the joystick does not have. UP and DOWN act when released,
+            # as in CarPlay, so that a hold is Back alone.
+            if key in ("UP", "DOWN") and action != "CLICK":
+                if action == "PRESS":
+                    self.held = key
+                elif action == "LONG_PRESS":
+                    self.held = None
+                    if key == "UP":
+                        self.b.launcher.on_key("BACK")
+                elif self.held == key:             # RELEASE of a short press
+                    self.held = None
+                    self.b.launcher.on_key(key)
+                return
             if action != "RELEASE":
                 self.b.launcher.on_key(key)
             return
@@ -158,6 +177,10 @@ class _Present:
 
 
 class Bridge:
+    recovery = None                    # mtspi/recovery.py, set in __init__ when the real radios are in use
+    siri_mic_open = None               # an Event while Siri waits for the helmet microphone
+    _control_idle_since = None
+
     def __init__(self, a):
         self.a = a
         self.log = hv.JsonLog(a.log, a.quiet)
@@ -201,6 +224,10 @@ class Bridge:
         self._media_sent = None
         self._aclk = 0.0
         self._burst_until = 0.0
+        # gets the Pi back on its feet when the bike's Wi-Fi or the radio fail (mtspi/recovery.py); only with the real radios
+        self.recovery = (recovery.Recovery(self.log) if a.bt == "real" and a.wifi != "none"
+                         and os.environ.get("MIRROR_RECOVERY", "1") != "0" else None)
+        self._control_idle_since = None   # when the bike's control channel last ended (None while one is open)
         self._iphone_retry = 0.0       # pro: last attempt to reconnect to the iPhone        # end of the anti-burst window (3 s after connecting or resuming)               # CarPlay music clock (to drop bursts)
         self._sms_event = asyncio.Event()   # "new message" from the iPhone (MNS): the inbox is re-read
         self.fast_bt_poll = False      # during a CarPlay ring the iPhone is polled more often (number)
@@ -784,11 +811,39 @@ class Bridge:
         if on and self.dongle and self.carplay_state() == "on" and not self.call:
             if self.siri_until:                # already listening: a second request changes nothing
                 return
-            await self.dongle.send(ck.send_command("siri"))
-            self.siri_set(True, self.SIRI_START_S)
-            self.spawn(self.siri_release())
+            if self.a.bike_audio == "none" or not SIRI_WAIT_MIC:
+                await self.dongle.send(ck.send_command("siri"))
+                self.siri_set(True, self.SIRI_START_S)
+                self.spawn(self.siri_release())
+            else:
+                # SIRI_WAIT_MIC: the bike opens the voice channel now; Siri starts when the helmet microphone is there
+                self.siri_set(True, self.SIRI_MIC_WAIT_S + self.SIRI_START_S)
+                self.spawn(self.siri_when_mic_open())
         else:                                  # CarPlay off, call in progress or close request
             self.siri_set(False)
+
+    SIRI_MIC_WAIT_S = 4.5    # the bike connects the helmet about 3.3 s after the voice channel opens (21 Nov 2026)
+    SIRI_MIC_LEVEL = 4       # until then the bike sends plain silence (samples of 0 or 1); an open microphone hisses at 10 or more
+
+    async def siri_when_mic_open(self):
+        """Only with SIRI_WAIT_MIC=1. Siri started at once listens to about three seconds of silence before the bike
+        has connected the helmet. Here the command goes to CarPlay when the first real sound comes from the helmet,
+        or after SIRI_MIC_WAIT_S if none does."""
+        t0 = time.monotonic()
+        self.siri_mic_open = asyncio.Event()
+        try:
+            await asyncio.wait_for(self.siri_mic_open.wait(), self.SIRI_MIC_WAIT_S)
+            why = "microphone open"
+        except asyncio.TimeoutError:
+            why = "no sound from the microphone"
+        finally:
+            self.siri_mic_open = None
+        if not self.siri_until or not self.dongle or self.call:
+            return                             # closed, or a call arrived, while waiting
+        self.log("siri_command", waited_s=round(time.monotonic() - t0, 2), why=why)
+        await self.dongle.send(ck.send_command("siri"))
+        self.siri_until = time.monotonic() + self.SIRI_START_S
+        await self.siri_release()
 
     async def bike_audio(self):
         while True:
@@ -824,6 +879,9 @@ class Bridge:
                             await self.dongle.send(ck.send_mic(data))
                         elif self.iphone:
                             await self.iphone.send(lp.MIC, data)
+                    elif self.siri_mic_open is not None:           # Siri asked for, not started yet: is the helmet there?
+                        if len(data) > 1 and int(np.abs(np.frombuffer(data[: len(data) & ~1], dtype="<i2")).max()) >= self.SIRI_MIC_LEVEL:
+                            self.siri_mic_open.set()
                     elif self.siri_until and self.dongle:          # Siri: the helmet microphone goes to CarPlay
                         await self.dongle.send(ck.send_mic(data))
                 elif kind == lp.JSON:
@@ -865,6 +923,9 @@ class Bridge:
     async def myspin(self):
         if self.a.control != "none":
             self.spawn(self.control_loop())
+            if self.recovery:
+                self.spawn(self.mirror_guard())
+                self.spawn(self.radio_watch())
         while True:
             try:
                 ep = await discover_vehicle(self.log, self.a.discovery_port, timeout=3600)
@@ -916,12 +977,18 @@ class Bridge:
                 waiting = asyncio.ensure_future(hv.control_channel(self.a.control, self.log))
             r, w = await waiting
             waiting = None
+            self._control_idle_since = None
+            joining = False
             try:
                 control = PhoneControl(r, w, self.log, device_name=self.a.bt_name)
                 creds = await control.negotiate()
                 if self.a.ap_credentials_file:
                     hv.save_credentials(self.a.ap_credentials_file, creds, self.log)
+                joining = True
                 await hv.join_wifi(self.a.wifi, creds, self.log)
+                joining = False
+                if self.recovery:
+                    self.recovery.join_ok()
                 await control.notify_wlan("CONNECTED")
                 if self.a.control == "rfcomm":
                     # On the bike (16 Nov 2026): after a radio dropout the dashboard opened the channel again, but the
@@ -947,9 +1014,82 @@ class Bridge:
             except (Exception, asyncio.TimeoutError) as e:
                 # a half-finished negotiation (dashboard off or gone) must not stop the Pi: wait again
                 self.log("control_error", error=f"{type(e).__name__}: {e}")
+                if joining and self.recovery:
+                    # the bike offered its Wi-Fi and the Pi could not get on it: next step of the recovery
+                    await self.recover(self.recovery.join_failed(), why=f"{e}")
             finally:
                 w.close()
+                self._control_idle_since = time.monotonic()
             await asyncio.sleep(1)
+
+    async def recover(self, action, why):
+        rec, loop = self.recovery, asyncio.get_running_loop()
+        if action == "restart_p2p":
+            await loop.run_in_executor(None, rec.restart_p2p)
+        elif action == "reboot":
+            await loop.run_in_executor(None, rec.reboot, why)
+        elif action == "bounce":
+            bike = self.bt.bike if self.bt else None
+            if not bike:
+                return
+            self.log("mirror_bike_reconnect", failures=rec.streak, attempt=rec.bounces)
+            try:
+                # closing the link is enough: mtspi-wifi-mode reconnects the bike within a few seconds, and the
+                # dashboard then opens its control channel again as it does at every ignition
+                bus = await bluez.system_bus()
+                try:
+                    await asyncio.wait_for(bluez.call(bus, "org.bluez", bike["path"], "org.bluez.Device1", "Disconnect"), 8)
+                finally:
+                    bus.disconnect()
+            except Exception as e:
+                self.log("mirror_bike_reconnect_failed", error=(str(e) or type(e).__name__)[:120])
+
+    async def mirror_guard(self):
+        """After a failed join the bike normally offers its Wi-Fi again within a second. When it stays silent
+        (21 Nov 2026: no address from the bike, then nothing for four minutes) the Pi moves by itself."""
+        while True:
+            await asyncio.sleep(3)
+            rec = self.recovery
+            if rec.streak == 0 or self._control_idle_since is None or not (self.bt and self.bt.bike):
+                continue                 # nothing failed, a negotiation is running, or the bike is not there at all
+            action = rec.idle_action(time.monotonic() - self._control_idle_since, in_call=bool(self.call))
+            if action:
+                self._control_idle_since = time.monotonic()
+                await self.recover(action, why="the bike did not offer its Wi-Fi again")
+
+    async def radio_watch(self):
+        """Follows what the kernel says about the Bluetooth radio (mtspi/recovery.py)."""
+        try:
+            fd = os.open("/dev/kmsg", os.O_RDONLY | os.O_NONBLOCK)
+            os.lseek(fd, 0, os.SEEK_END)
+        except OSError as e:
+            self.log("radio_watch_off", error=str(e))
+            return
+        watch, loop, lines = recovery.RadioWatch(), asyncio.get_running_loop(), asyncio.Queue()
+
+        def readable():
+            try:
+                while True:
+                    lines.put_nowait(os.read(fd, 8192).decode("utf-8", "replace"))
+            except BlockingIOError:
+                pass
+            except OSError as e:            # EPIPE: the kernel overwrote records we had not read yet; go on from the next
+                if e.errno != 32:
+                    loop.remove_reader(fd)
+                    lines.put_nowait(None)
+        loop.add_reader(fd, readable)
+        while True:
+            line = await lines.get()
+            if line is None:
+                self.log("radio_watch_off", error="kernel log no longer readable")
+                return
+            what = watch.feed(line)
+            if what == "reset":
+                self.log("radio_reset", kernel=line.split(";", 1)[-1].strip()[:80])
+                self.recovery.radio_reset()
+            elif what == "stuck":
+                self.log("radio_stuck", kernel=line.split(";", 1)[-1].strip()[:80])
+                await self.recover("reboot", why="the Bluetooth radio no longer answers")
 
     async def carplay_idle_off(self):
         """After leaving Ducati Connect: turns CarPlay off after a while, so the audio goes back to Bluetooth."""
@@ -971,6 +1111,39 @@ class Bridge:
             last = (count - c0) / (now - t0)
             self._rates[name] = (now, count, last)
         return last
+
+    # ------------------------------------------------------------ tyre pressure page
+    TYRES_STATE = os.environ.get("TPMS_STATE", "/run/mtspi-tpms/state.json")
+    # recommended pressures of the Multistrada V4 (normal/fully loaded), unless TPMS_FRONT_BAR / TPMS_REAR_BAR say otherwise
+    TYRES_BAR = {"front": "2.4/2.4", "rear": "2.5/2.9"}
+
+    def tyres_enabled(self):
+        return os.environ.get("TPMS", "0") == "1"
+
+    def tyres(self):
+        """What the listener (mtspi/tpms.py) last heard, for the page on the dashboard: front first, then rear."""
+        import json
+        now = time.monotonic()
+        try:
+            st = json.loads(open(self.TYRES_STATE).read())
+        except (OSError, ValueError):
+            return {"listening": False, "wheels": []}
+
+        def recommended(wheel):                  # TPMS_FRONT_BAR=2.4/2.4: normal and fully loaded
+            try:
+                text = os.environ.get(f"TPMS_{wheel.upper()}_BAR") or self.TYRES_BAR[wheel]
+                text = text.replace(",", ".").replace("/", " ")
+                return [float(x) for x in text.split()][:2] or None
+            except ValueError:
+                return None
+        wheels = []
+        for addr, v in (st.get("sensors") or {}).items():
+            wheel = v.get("wheel")
+            wheels.append({"wheel": wheel, "id": addr[-8:], "bar": v.get("bar"), "temp_c": v.get("temp_c"),
+                           "volt": v.get("volt"), "age_s": max(0.0, now - v.get("up", now)),
+                           "recommended": recommended(wheel) if wheel else None})
+        wheels.sort(key=lambda w: ({"front": 0, "rear": 1}.get(w["wheel"], 2), w["id"]))
+        return {"listening": now - st.get("alive_up", 0) < 150, "wheels": wheels}
 
     def system_info(self):
         """Pi status (on the bench Mac some values do not exist: "n/a")."""

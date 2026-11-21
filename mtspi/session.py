@@ -175,10 +175,15 @@ async def join_p2p(creds: dict, log) -> None:
     # tore down the freshly formed group. IP from the bike, no gateway (the default route stays where it is)
     # -A: no ARP probe of the offered address. The bike always offers the same one and the probe alone cost 4.6-4.9 s
     # in each of the three joins of the 16/11 ride (of 6-9 s spent getting the address).
+    # Two tries of 12 s: on the bike the address comes in 2-5 s, and once (21 Nov 2026) it did not come at all in 20 s.
     t_group = time.monotonic()
-    proc = await loop.run_in_executor(
-        None, lambda: run(["sudo", "-n", "/usr/sbin/dhcpcd", "-1", "-4", "-A", "-G", "-t", "20", iface], timeout=40))
-    _, has_ip = await loop.run_in_executor(None, group_iface)
+    for attempt in (1, 2):
+        proc = await loop.run_in_executor(
+            None, lambda: run(["sudo", "-n", "/usr/sbin/dhcpcd", "-1", "-4", "-A", "-G", "-t", "12", iface], timeout=30))
+        _, has_ip = await loop.run_in_executor(None, group_iface)
+        if has_ip:
+            break
+        log("p2p_dhcp_retry", iface=iface, attempt=attempt, code=proc.returncode, output=(proc.stdout + proc.stderr).strip()[-120:])
     # network name and frequency of the bike's group: on 16/11 the name was different at every join
     net = {}
     try:
@@ -187,7 +192,7 @@ async def join_p2p(creds: dict, log) -> None:
     except Exception:
         pass
     log("p2p_joined" if has_ip else "p2p_dhcp_failed", iface=iface, code=proc.returncode,
-        address_s=round(time.monotonic() - t_group, 1), **net,
+        address_s=round(time.monotonic() - t_group, 1), attempts=attempt, **net,
         output=(proc.stdout + proc.stderr).strip()[-200:])
     if not has_ip:
         raise ConnectionError("Wi-Fi Direct: no IP address from the bike")

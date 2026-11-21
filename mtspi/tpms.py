@@ -15,9 +15,11 @@ What it writes:
     survey of everything else on the air (first sight of each address, and the addresses that stay around), so that a
     sensor with a format we do not know yet can still be found afterwards.
 
-NOT YET TRIED WITH THE BIKE (20 Nov 2026): the same radio carries music and calls, and every listening window takes it
-away from them for that long. Whether 30 ms every 300 ms can be heard in the music is to be checked on the bench with
-the helmet before a ride; TPMS_WINDOW_MS / TPMS_INTERVAL_MS in /etc/default/mtspi change it without touching the code.
+Tried on the bike on 21 Nov 2026 (two HRTPMS valve caps): both read, values in line with the maker's app. Each sensor
+broadcasts every 94.4 s. Listening all the time at 10% caught about half of the broadcasts and could be heard, slightly,
+in the music going to the bike over the same radio. Hence the windows (class Windows): after a first search the radio is
+asked for only around each expected broadcast. TPMS_PERIOD_S=0 goes back to listening all the time. The windows have
+been tried on a simulated ride and on the bench radio, not yet on the bike.
 At home (many broadcasters around) the broadcasts heard grow in step with the share: one beacon was heard 67 times in
 30 s at 10%, 166 at 25%, 333 at 50%, 438 at 100%; the listener itself uses about 1.5% of one processor core.
 
@@ -94,6 +96,81 @@ def reading(data):
     if "TPMS" in name.upper():
         return "?", None, None
     return None, None, None
+
+
+class Windows:
+    """Listening only when a sensor is about to speak. On the bike (21 Nov 2026) the two sensors broadcast every 94.4 s
+    each, on their own clocks; listening all the time at 10% caught about half of the broadcasts and could be heard,
+    slightly, in the music. So: listen all the time only until each sensor has been heard (the search), then open the
+    radio a few seconds around the moment each one is expected, with a larger share of the time, and close it as soon
+    as it has spoken.
+
+    The period is learned from the sensors themselves: the gap between two broadcasts of the same sensor, or that gap
+    divided by the number of broadcasts missed in between. TPMS_PERIOD_S gives it a starting value. A window is as wide as the margin
+    plus what the sensor's clock may have drifted since it was last heard, so it widens by itself after a miss; a
+    sensor not heard for LOST_PERIODS periods is searched for again. A learned period may be twice the real one
+    (a broadcast missed during the search): for the first PROBES rounds the half-way moments are listened to as well."""
+    LOST_PERIODS = 8
+    PROBES = 3
+
+    def __init__(self, period_s=0.0, sensors=2, search_s=360.0, margin_s=1.0, drift=0.004, again_every_s=900.0,
+                 again_s=110.0, now=time.monotonic):
+        self.period, self.fixed = (period_s or None), bool(period_s)
+        self.sensors, self.search_s, self.margin, self.drift = sensors, search_s, margin_s, drift
+        self.again_every, self.again_s = again_every_s, again_s
+        self.t0 = now()
+        self.heard = {}                          # address -> when it last spoke
+        self.probes = 0 if self.fixed else self.PROBES
+
+    def heard_sensor(self, addr, t):
+        prev = self.heard.get(addr)
+        self.heard[addr] = t
+        if prev is None:
+            return
+        gap = t - prev
+        if gap < 15:                             # the same broadcast heard twice
+            return
+        if self.period is None:
+            if gap <= 300:
+                self.period = gap
+            return
+        k = round(gap / self.period)
+        if k >= 1 and abs(gap - k * self.period) <= 0.03 * gap + 1:
+            self.period += 0.3 * (gap / k - self.period)          # the same period, measured again
+            self.probes = max(0, self.probes - 1)
+        elif gap < 0.8 * self.period:
+            self.period = gap                    # what had been learned was a multiple: broadcasts were being missed
+            self.probes = self.PROBES
+
+    def listen(self, t):
+        """(listen now?, why, seconds until this may change)."""
+        for addr in [a for a in self.heard                       # not heard for too long: searched for again
+                     if self.period and t - self.heard[a] > self.LOST_PERIODS * self.period]:
+            del self.heard[addr]
+        if self.period is None or len(self.heard) < self.sensors:
+            since = t - self.t0
+            if since < self.search_s:
+                return True, "search", min(1.0, self.search_s - since)
+            # nothing (or not everything) found in the search: try again now and then, the rest is windows
+            phase = (since - self.search_s) % self.again_every
+            if phase >= self.again_every - self.again_s:
+                return True, "search", min(1.0, self.again_every - phase)
+            wait = self.again_every - self.again_s - phase
+        else:
+            wait = 60.0
+        if self.period:
+            step = self.period / 2 if self.probes else self.period
+            for addr in self.heard:
+                last = self.heard[addr]
+                n = max(1, round((t - last) / step))
+                for i in (n, n + 1):             # the moment nearest to now, and the one after it
+                    e, m = last + i * step, self.margin + i * step * self.drift
+                    if e - m <= t <= e + m:
+                        return True, "window", min(1.0, e + m - t)
+                    if t < e - m:
+                        wait = min(wait, e - m - t)
+                        break
+        return False, "between windows", max(0.05, min(1.0, wait))
 
 
 class Radio:
@@ -186,6 +263,14 @@ def main():
     ap.add_argument("--interval-ms", type=float, default=float(env("TPMS_INTERVAL_MS", "300")))
     ap.add_argument("--on-s", type=float, default=float(env("TPMS_ON_S", "0")), help="listen this long, then rest --off-s")
     ap.add_argument("--off-s", type=float, default=float(env("TPMS_OFF_S", "0")), help="0 = never rest (default)")
+    ap.add_argument("--period-s", default=env("TPMS_PERIOD_S", "auto"),
+                    help="seconds between a sensor's broadcasts: listen only around them. auto = learn it (default), "
+                         "0 = listen all the time")
+    ap.add_argument("--sensors", type=int, default=int(env("TPMS_SENSORS", "2")), help="how many sensors to look for")
+    ap.add_argument("--win-window-ms", type=float, default=float(env("TPMS_WIN_WINDOW_MS", "100")),
+                    help="share of radio time inside a window around an expected broadcast")
+    ap.add_argument("--win-interval-ms", type=float, default=float(env("TPMS_WIN_INTERVAL_MS", "200")))
+    ap.add_argument("--margin-s", type=float, default=float(env("TPMS_MARGIN_S", "1.0")))
     ap.add_argument("--seconds", type=float, default=0, help="stop after this long and print a summary (0 = never)")
     ap.add_argument("--log-dir", default=env("TPMS_LOG_DIR") or env("MTSPI_LOG_DIR") or "/var/lib/mtspi")
     ap.add_argument("--max-mb", type=float, default=float(env("TPMS_LOG_MAX_MB", "4")))
@@ -195,10 +280,28 @@ def main():
     a = ap.parse_args()
     if a.selftest:
         return selftest()
-    names = {}                                   # optional: TPMS_FRONT / TPMS_REAR = address of that wheel's sensor
-    for wheel in ("front", "rear"):
-        if env("TPMS_" + wheel.upper()):
-            names[env("TPMS_" + wheel.upper()).upper()] = wheel
+    # optional: TPMS_FRONT / TPMS_REAR = address of that wheel's sensor, or its last bytes as the maker's app shows
+    # them (00:11:22)
+    ends = {env("TPMS_" + w.upper()).upper().strip(): w for w in ("front", "rear") if env("TPMS_" + w.upper())}
+
+    class Names(dict):
+        def get(self, addr, default=None):
+            return next((w for end, w in ends.items() if addr.upper().endswith(end)), default)
+    names = Names()
+    state_path = env("TPMS_STATE", "/run/mtspi-tpms/state.json")
+
+    def save_state():
+        """What was last heard, for the page on the dashboard (read by the bridge). In memory only (/run)."""
+        doc = {"alive_up": round(time.monotonic(), 1), "period_s": round(wins.period, 1) if wins and wins.period else None,
+               "sensors": {addr: {"wheel": names.get(addr), "up": round(s["at"], 1), "rssi": s.get("rssi"), **(s["last"] or {})}
+                           for addr, s in sensors.items()}}
+        try:
+            tmp = state_path + ".new"
+            with open(tmp, "w") as f:
+                f.write(json.dumps(doc))
+            os.replace(tmp, state_path)
+        except OSError:
+            pass
 
     out, limit, written = None, int(a.max_mb * 1e6), 0
     if not a.no_file:
@@ -242,31 +345,57 @@ def main():
           f"scan {mode or 'REFUSED (retrying)'}, log {out.name if out else 'none'}", flush=True)
     log("start", window_ms=a.window_ms, interval_ms=a.interval_ms, scan=mode)
 
+    wins = None
+    if str(a.period_s).strip().lower() not in ("0", "0.0", "off", ""):
+        fixed = 0.0 if str(a.period_s).strip().lower() == "auto" else float(a.period_s)
+        wins = Windows(period_s=fixed, sensors=a.sensors, margin_s=a.margin_s)
+        print(f"tpms: after the search, listening only around each sensor's broadcasts "
+              f"(period {'to be learned' if not fixed else f'{fixed:g} s'}, {a.win_window_ms:g} ms every "
+              f"{a.win_interval_ms:g} ms inside a window)", flush=True)
     paused = ""
+    scanning = "search"          # which share of radio time the scan is using now: "search" or "window"
+    in_call = False
+    windows = heard_in_window = 0
+    wait = 1.0
     next_call = 0.0
     seen = {}                    # address -> [first, last, count, rssi sum, last data, last "stays around" line]
     sensors = {}                 # address -> {"last": values, "printed": time, "count": n, "first": time, ...}
     total = restarts = 0
     t0 = time.monotonic()
     next_check, next_stats = t0 + 30, t0 + 60
+    save_state()
     while not stop:
         now = time.monotonic()
         if a.seconds and now - t0 >= a.seconds:
             break
         if now >= next_call:                     # a phone call has the radio to itself; TPMS_OFF_S adds rests
             next_call = now + 2
-            rest = a.off_s > 0 and a.on_s > 0 and (now - t0) % (a.on_s + a.off_s) >= a.on_s
-            why = "phone call" if radio.in_call(a.dev) else ("resting" if rest else "")
-            if why and not paused:
-                paused = why
+            in_call = radio.in_call(a.dev)
+        rest = a.off_s > 0 and a.on_s > 0 and (now - t0) % (a.on_s + a.off_s) >= a.on_s
+        want, kind, wait = wins.listen(now) if wins else (True, "search", 1.0)
+        why = "phone call" if in_call else ("resting" if rest else ("" if want else kind))
+        if why != paused or (not why and kind != scanning):
+            quiet = "between windows" in (why, paused) or kind != scanning      # windows come and go all the time
+            if why:
                 radio.enable(0)
+            else:
+                scanning = kind
+                if kind == "window":
+                    windows += 1
+                    mode = radio.start(a.win_window_ms, a.win_interval_ms)
+                else:
+                    mode = radio.start(a.window_ms, a.interval_ms)
+            if why and not quiet:
                 print(f"tpms: {why}, listening paused", flush=True)
                 log("paused", why=why)
-            elif paused and not why:
-                paused = ""
-                mode = radio.start(a.window_ms, a.interval_ms)
+            elif not why and not quiet:
                 print("tpms: listening again", flush=True)
                 log("resumed", scan=mode)
+            if wins and why == "between windows" and paused != why and scanning == "search" and wins.period:
+                print(f"tpms: search over, {len(wins.heard)} sensors, period {wins.period:.1f} s: "
+                      f"listening only around their broadcasts from now on", flush=True)
+                log("windows", sensors=len(wins.heard), period_s=round(wins.period, 2))
+            paused = why
         if now >= next_check and paused:
             next_check = now + 30
         if now >= next_check:
@@ -275,18 +404,22 @@ def main():
             next_check = now + 30
             if radio.enable(1) == 0 or not mode:
                 restarts += 1
-                mode = radio.start(a.window_ms, a.interval_ms)
+                mode = (radio.start(a.win_window_ms, a.win_interval_ms) if scanning == "window"
+                        else radio.start(a.window_ms, a.interval_ms))
                 log("scan-restarted", scan=mode)
         if now >= next_stats:
             next_stats = now + 60
+            save_state()
             around = sum(1 for v in seen.values() if v[1] - v[0] > 120 and now - v[1] < 60)
             print(f"tpms: {total} broadcasts heard, {len(seen)} addresses ({around} staying around), "
-                  f"{len(sensors)} tyre sensors, scan restarted {restarts} times", flush=True)
+                  f"{len(sensors)} tyre sensors, scan restarted {restarts} times"
+                  + (f", windows {windows} (sensor heard in {heard_in_window}), period "
+                     f"{f'{wins.period:.1f} s' if wins.period else 'not known yet'}" if wins else ""), flush=True)
             if len(seen) > 4000:                 # phones change address all the time: forget the ones long gone
                 for k in [k for k, v in seen.items() if now - v[1] > 600]:
                     del seen[k]
         packets, radio.backlog = radio.backlog, []
-        if not packets and select.select([radio.s], [], [], 1.0)[0]:
+        if not packets and select.select([radio.s], [], [], wait)[0]:
             try:
                 packets = [radio.s.recv(1024)]
             except OSError as e:
@@ -312,9 +445,16 @@ def main():
                 if s["count"]:
                     s["gaps"].append(now - s["at"])
                 s["count"], s["at"], s["fmt"], s["rssi"] = s["count"] + 1, now, fmt, rssi
+                if wins:
+                    if scanning == "window" and not paused and now - wins.heard.get(addr, 0) > 15:
+                        heard_in_window += 1
+                    wins.heard_sensor(addr, now)
                 log("sensor", room=limit, addr=addr, fmt=fmt, status=status, rssi=rssi, data=data.hex(), **(val or {}))
-                if val != s["last"] or now - s["printed"] >= a.repeat_s:
-                    s["last"], s["printed"] = val, now
+                if val:
+                    s["last"] = val
+                    save_state()
+                if val != s.get("shown") or now - s["printed"] >= a.repeat_s:
+                    s["shown"], s["printed"] = val, now
                     who = names.get(addr, addr)
                     if val:
                         print(f"tpms: {who} {val['bar']:.2f} bar, {val['temp_c']} C, battery {val['volt']:.2f} V "

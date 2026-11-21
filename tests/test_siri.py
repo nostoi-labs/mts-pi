@@ -64,6 +64,77 @@ def test_bridge_siri_refused():
     asyncio.run(main())
 
 
+def waiting(fn):
+    """Runs a test with SIRI_WAIT_MIC=1 (off by default: on the bike Siri was started at once, and it worked)."""
+    def run():
+        from mtspi import bridge as br
+        was, br.SIRI_WAIT_MIC = br.SIRI_WAIT_MIC, True
+        try:
+            fn()
+        finally:
+            br.SIRI_WAIT_MIC = was
+    run.__name__ = fn.__name__
+    return run
+
+
+def test_bridge_siri_starts_at_once_as_it_did_on_the_bike():
+    async def main():
+        b = bridge()
+        b.a.bike_audio = "127.0.0.1:9160"              # the real setup: the bike's audio goes through the hands-free service
+        await b.bike_siri(True)
+        await asyncio.sleep(0.02)
+        assert b.dongle.sent[0] == ck.send_command("siri") and bike_events(b) == ["siri_start"]
+        assert b.siri_mic_open is None
+    asyncio.run(main())
+
+
+@waiting
+def test_bridge_siri_waits_for_the_helmet_microphone():
+    """With SIRI_WAIT_MIC=1 the voice channel opens first and Siri starts when the helmet microphone is there: on the
+    bike that takes about 3.3 s (21 Nov 2026)."""
+    async def main():
+        b = bridge()
+        b.a.bike_audio = "127.0.0.1:9160"
+        await b.bike_siri(True)
+        await asyncio.sleep(0.05)
+        assert bike_events(b) == ["siri_start"]          # the bike is told at once
+        assert b.dongle.sent == [] and b.siri_mic_open is not None   # CarPlay is not: nothing to listen to yet
+        b.siri_mic_open.set()                            # first real sound from the helmet
+        await asyncio.sleep(b.SIRI_PRESS_S + 0.1)
+        assert b.dongle.sent == [ck.send_command("siri"), ck.send_command("siriRelease")]
+        assert b.siri_mic_open is None and b.siri_until
+        assert [kw["why"] for e, kw in b.logs if e == "siri_command"] == ["microphone open"]
+    asyncio.run(main())
+
+
+@waiting
+def test_bridge_siri_starts_anyway_if_the_microphone_stays_silent():
+    async def main():
+        b = bridge()
+        b.a.bike_audio = "127.0.0.1:9160"
+        b.SIRI_MIC_WAIT_S = 0.15
+        await b.bike_siri(True)
+        await asyncio.sleep(0.3)
+        assert b.dongle.sent[0] == ck.send_command("siri")
+        assert [kw["why"] for e, kw in b.logs if e == "siri_command"] == ["no sound from the microphone"]
+    asyncio.run(main())
+
+
+@waiting
+def test_bridge_siri_closed_while_waiting_sends_nothing_to_carplay():
+    async def main():
+        b = bridge()
+        b.a.bike_audio = "127.0.0.1:9160"
+        await b.bike_siri(True)
+        await asyncio.sleep(0.02)
+        waiting = b.siri_mic_open
+        await b.bike_siri(False)                         # the rider lets go, or the bike closes
+        waiting.set()
+        await asyncio.sleep(0.05)
+        assert b.dongle.sent == [] and bike_events(b) == ["siri_start", "siri_stop"]
+    asyncio.run(main())
+
+
 class FakeBridgeLink:
     def __init__(self):
         self.sent = []
@@ -104,6 +175,59 @@ def test_hfp_bvra():
         await link.command("AT+BVRA=1")
         assert link.out[-1] == "ERROR" and not st.vr
     asyncio.run(main())
+
+
+def _siri_start(link, st, features, mode):
+    was = hfp_ag.VR_CALL_MODE
+    hfp_ag.VR_CALL_MODE = mode
+    try:
+        link.hf_features = features
+        st.ag.links = {"/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF": link}
+        st.on_json({"type": "hfp", "event": "siri_start"})
+        return list(st.calls), st.ind["call"]
+    finally:
+        hfp_ag.VR_CALL_MODE = was
+
+
+def test_hfp_siri_is_a_call_for_a_bike_without_voice_recognition():
+    link, st, _ = make_link()
+    calls, call = _siri_start(link, st, 693, "auto")     # the Multistrada V4 S: bit 3 off
+    assert call == 1 and calls[0][0] == "siri" and calls[0][1]["state"] == "active"
+    st.on_json({"type": "hfp", "event": "indicators", "cind": {"signal": 3}})   # levels arriving do not end it
+    assert st.ind["call"] == 1
+    st.on_json({"type": "hfp", "event": "siri_stop"})
+    assert st.calls == [] and st.ind["call"] == 0
+
+
+def test_hfp_siri_is_not_a_call_for_a_hands_free_with_voice_recognition():
+    link, st, _ = make_link()
+    calls, call = _siri_start(link, st, 693 | 8, "auto")
+    assert calls == [] and call == 0 and st.vr
+
+
+def test_hfp_siri_call_can_be_forced_or_switched_off():
+    link, st, _ = make_link()
+    assert _siri_start(link, st, 693 | 8, "1")[1] == 1
+    link, st, _ = make_link()
+    assert _siri_start(link, st, 693, "0")[1] == 0
+
+
+def test_hfp_hang_up_from_the_bike_closes_siri():
+    async def main():
+        link, st, _ = make_link()
+        _siri_start(link, st, 693, "auto")
+        await link.command("AT+CHUP")
+        assert st.link.sent[-1] == {"type": "hfp", "cmd": "siri", "on": False}
+    asyncio.run(main())
+
+
+def test_hfp_real_call_during_siri_is_not_named_siri():
+    link, st, _ = make_link()
+    _siri_start(link, st, 693, "auto")
+    st.on_json({"type": "hfp", "event": "call_active", "name": "Mamma"})
+    assert st.calls[0][0] == "bridge" and st.calls[0][1]["name"] == "Mamma"
+    st.on_json({"type": "hfp", "event": "siri_stop"})    # Siri ends: the real call stays
+    assert st.ind["call"] == 1
 
 
 if __name__ == "__main__":

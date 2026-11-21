@@ -39,9 +39,14 @@ What you get on the bike:
 > calls with their names in the bike's Phone menu, a call placed from CarPlay and closed from the bike, power from the USB socket in the tank compartment. Still open
 > after that evening: once the dashboard dropped off the air for half a minute and CarPlay came back only after
 > key off and on (the part that was our fault is fixed, not yet tried on the bike again); incoming calls have
-> been tried on the bench only; Siri does not hear the helmet microphone (see [Known limits](#known-limits)).
-> The fixes made after that evening are in the current card image: it has been written to a card and started
-> from scratch on a real Pi, and has not been on the bike yet.
+> been tried on the bench only.
+> On 21 Nov 2026, a second ride, with the card protected against power cuts: about ten key-offs and key-ons without
+> a problem, the iPhone's real battery and signal in the bike's status bar, the bike's Wi-Fi joined in 2–5 s,
+> calls, and Siri from the helmet once the Pi showed it to the bike as a call. The same ride found three faults
+> that needed the key or the Pi's plug: twice the Pi's radio chip gave way with many things going on at once, and
+> once the bike's Wi-Fi gave no address and the Pi did not try again. The current image tries again and restarts
+> the radio, or itself, when that happens (see [Known limits](#known-limits)): that part has been tried on the
+> bench only.
 > `install.sh` on a blank system has not been run on a real Pi yet. This page is updated as things are tried.
 
 > **Unofficial project, at your own risk.** MTS Pi is a hobby project, not a product. It is not affiliated with,
@@ -259,7 +264,9 @@ disconnecting the iPhone in the bike's Bluetooth menu brings it back.
 ![Settings](docs/settings-screen.png)
 
 The settings page, on the dashboard: language (English or Italian), CarPlay at start-up, turning CarPlay off when
-you leave Ducati Connect, and picture quality (three steps: higher quality means slightly fewer frames).
+you leave Ducati Connect, and picture quality (higher quality means slightly fewer frames, and the highest one
+more heat). To leave the page, use its last row or hold the joystick up: in the Pi's own pages that is Back, as
+it is in CarPlay.
 
 ## What works
 
@@ -274,11 +281,13 @@ you leave Ducati Connect, and picture quality (three steps: higher quality means
 | The bike's Music menu | **bike** | track title from the dongle → AVRCP; the bike's buttons → CarPlay play/pause/skip |
 | Recent calls with names in the bike's Phone menu | **bike** | PBAP from the iPhone to the Pi, then from the Pi to the bike: the dashboard downloads the phonebook and the call lists. The Multistrada shows the recent calls; it has no screen for browsing contacts. |
 | Battery and signal on the home screen | bench | the iPhone's HFP indicators |
+| The iPhone's real battery and signal in the bike's status bar | **bike** (21 Nov 2026) | the same indicators passed on to the bike whenever they change; before, the bike showed full bars all the time |
 | The Pi's home screen in Ducati Connect, joystick | **bike** | first tried on the Multistrada on 24 Oct 2026 |
 | Text messages on the bike | not applicable | the Multistrada's dashboard has no function for messages |
-| Siri from the helmet, started by holding the joystick down | bench, switched off in the card image | the dongle's "voice button" pressed and released → the Pi opens the voice channel to the bike without a call → helmet microphone to CarPlay. Not tried on the bike yet: the line `SIRI=on` in `mtspi.txt` on the card switches it on |
+| Siri from the helmet, started by holding the joystick down | **bike** (21 Nov 2026), switched off in the card image | the Pi shows Siri to the bike as a call in progress and the bike connects the helmet, about 3 s later, with a tone of its own: speak after the tone. The dashboard shows a call while Siri listens. Dictated messages and voice search in the maps work the same way. The line `SIRI=on` in `mtspi.txt` on the card switches it on |
+| Coming back without the key when the bike's Wi-Fi or the Pi's radio fail | bench | a failed join is tried again; if the bike stays silent its Bluetooth link is closed and reopened; then the Wi-Fi Direct program is restarted; as a last resort, or when the Bluetooth radio no longer answers, the Pi restarts itself (at most once in 15 minutes). Written after the ride of 21 Nov 2026, not yet seen at work on the bike |
 
-"Bike" means: tried on the Multistrada V4 S on 16 Nov 2026, with the ready-made card. "Bench" means: real Pi,
+"Bike" means: tried on the Multistrada V4 S on 16 Nov 2026 (or on the date given), with the ready-made card. "Bench" means: real Pi,
 real Carlinkit, real iPhone, a helmet intercom playing the part of the bike's Bluetooth, an emulated dashboard
 for the screen link, Wi-Fi on 2.4 GHz as on the bike.
 
@@ -291,6 +300,11 @@ for the screen link, Wi-Fi on 2.4 GHz as on the bike.
 | CarPlay on the dashboard while riding (map and music) | 11 frames per second (7–13), longest pause 3.2 s | bike, 16 Nov 2026 |
 | Key-on → CarPlay ready on the dashboard, ready-made card | about 100 s (Pi boot 29 s, the bike connected at 76 s, Wi-Fi 18 s) | bike, 16 Nov 2026 |
 | Music back after a call closed from the bike | 0.5 s | bike, 16 Nov 2026 |
+| Address from the bike's Wi-Fi after joining it | 2.3–4.9 s in six joins (6–9 s before); once no address at all | bike, 21 Nov 2026 |
+| Helmet microphone open after the bike is told a call has started | about 3.3 s (the same for Siri and for a dictated message) | bike, 21 Nov 2026 |
+| Temperature of the Pi after half an hour of CarPlay on the dashboard, 16 °C outside | 56 °C on average at high quality (60 at most); 61 °C at the highest quality, where the Pi starts slowing itself down | bike, 21 Nov 2026 |
+| First start of the protected card: power-on → protected and ready | 2–3 min (one restart by itself) | bench, 20 Nov 2026 |
+| Power cuts survived by the protected card in one night | 241 of 241 (300 of 300 on the test card the night before) | bench, 21 Nov 2026 |
 | Power from the USB socket in the tank compartment (1 A at most) | no under-voltage through engine start and a ride; current on the bike not measured | bike, 16 Nov 2026 |
 | Temperature in the tank compartment (the one without the fan), 15 °C outside | 27–41 °C | bike, 16 Nov 2026 |
 | CarPlay with a moving map and music | 20–22 frames per second at high quality | bench, 10 Nov 2026 |
@@ -359,6 +373,20 @@ Notes for anyone building something similar. Each of these cost an evening or mo
   as the button is "held": the animation follows your voice and no answer ever comes. With the release a moment
   later Siri ends the listening by itself. And a helmet intercom sends "pause" when the voice channel opens:
   passed on to CarPlay, that closed Siri after a second.
+- **A bike that does not know about voice assistants still knows about calls.** The Multistrada does not declare
+  voice recognition in its hands-free handshake. With only the voice channel open (what a phone does for an
+  assistant) it accepted the channel, sent plain silence and connected nothing to the helmet. Told that a call is
+  in progress, it connects the helmet, about three seconds later, and plays a tone in it: that tone is when to
+  speak.
+- **Bluetooth and Wi-Fi share one chip, and it can be asked too much.** On the second ride that chip gave way
+  twice: once the Bluetooth half stopped answering the system, once it restarted itself and Wi-Fi Direct did not
+  come back. Both times a lot was going on at once: music, calls, the screen at the highest quality, and two
+  things of ours that a normal card does not have, a remote login carried over Bluetooth tethering and a
+  Bluetooth scan. The rider heard small gaps in the music every time we worked on the Pi through that tethering.
+  We do not know yet which load is one too many; what we changed is that the Pi now notices and recovers.
+- **Count waits from power-on, not from the clock.** A Pi has no clock battery: the right time arrives after the
+  start (from the network, or here from the iPhone) and the clock jumps. A 45-second wait measured with the clock
+  ended after 16.
 - **A card you cannot reach can still tell you what happened.** The small `bootfs` partition is readable from any
   computer: a script started from `cmdline.txt` copied the logs there, and that is how the two problems above
   were found without a screen, a keyboard or a network.
@@ -375,7 +403,10 @@ change: `sudo systemctl restart mtspi-bridge mtspi-hfp`.
 | `HOME_SSID` | your home Wi-Fi: the Pi returns to it when the bike is not there |
 | `BIKE_ADDR` | Bluetooth address of the bike, if its Bluetooth name does not start with `DUCATI` |
 | `BIKE_GRACE` | seconds without the bike before returning to the home Wi-Fi (default 45) |
-| `HFP_VR` | `1` turns on Siri, from the joystick held down and from the bike's phone button (experimental). On the ready-made card the line `SIRI=on` or `SIRI=off` in `mtspi.txt` sets it for you |
+| `HFP_VR` | `1` turns on Siri, from the joystick held down and from the bike's phone button. On the ready-made card the line `SIRI=on` or `SIRI=off` in `mtspi.txt` sets it for you |
+| `HFP_VR_CALL` | how Siri is shown to the bike: `auto` (default) as a call when the bike does not declare voice recognition, `1` always as a call, `0` never |
+| `SIRI_WAIT_MIC` | `1` starts Siri only when the helmet microphone is open, instead of at once (bench only so far) |
+| `MIRROR_RECOVERY` | `0` switches off the recovery steps (new tries, Bluetooth reconnection, restart of the Pi as a last resort) |
 
 The icon inside CarPlay is a plain red square with the letter M. To use your own picture, save it as
 `/var/lib/mtspi/oem_icon.png` (256×256 PNG). The iPhone reads the icon when CarPlay is paired: to change it
@@ -392,8 +423,13 @@ and how much has been written to each partition since power-on.
 
 - All the iPhone's sound goes through CarPlay: if CarPlay stops, there is no music and there are no calls until
   it is back.
-- After a Bluetooth radio error the Pi needs a restart and the dongle must be powered again: on the bike, key off
-  and on.
+- The Pi's radio chip (Bluetooth and Wi-Fi together) gave way twice in one ride (21 Nov 2026), with a lot going
+  on at once; we do not know yet which load is one too many. Both times it took key off and on. The Pi now
+  notices: when the Bluetooth radio no longer answers it restarts itself (about a minute without CarPlay), and
+  when Wi-Fi to the bike does not come back it tries again, reconnects the bike, and restarts as a last resort,
+  at most once in 15 minutes. Each restart is noted in `/var/lib/mtspi/recovery.log`. Tried on the bench only.
+- The highest screen quality in the Pi's settings doubles the data sent to the dashboard and adds about 5 °C.
+  The ride with the two radio faults was at that quality; the half hour after it, at high quality, had none.
 - Once, music stuttered for about a minute after an incoming call.
 - On the bike, once in one evening, the dashboard went silent on Wi-Fi and Bluetooth together for about half a
   minute at the end of a ride, while the Pi's link to the iPhone stayed up. We do not know why. Music came back
@@ -402,10 +438,11 @@ and how much has been written to each partition since power-on.
   bike yet.
 - If the iPhone is still in the bike's list of devices, at key-on the bike may connect to it instead of the Pi:
   disconnect it in the bike's Bluetooth menu (see [Pairing](#pairing)).
-- Siri from the helmet works on the bench (joystick held down) and is switched off in the card image until it has
-  been tried on the bike: we do not know yet whether the real dashboard passes the helmet microphone on when
-  there is no call. To try it, write `SIRI=on` in `mtspi.txt` on the card (`SIRI=off` to go back); on a manual
-  installation, `HFP_VR=1` in `/etc/default/mtspi`.
+- Siri from the helmet (joystick held down) worked on the bike on 21 Nov 2026, shown to the bike as a call: the
+  dashboard shows a call in progress while Siri listens, and the helmet is connected about three seconds after
+  the joystick, with a tone from the bike. Words spoken before the tone are lost. It is switched off in the card
+  image: to use it, write `SIRI=on` in `mtspi.txt` on the card (`SIRI=off` to go back); on a manual installation,
+  `HFP_VR=1` in `/etc/default/mtspi`.
 - The joystick's moves in CarPlay changed on 17 Nov 2026 (lists move one row at a time, the buttons on the map can
   be reached): tried on the bench in the app grid, the contacts, Apple Maps and Google Maps, not on the bike yet.
   Left and right no longer change track on the "Now Playing" screen: they move between its buttons.
@@ -420,8 +457,9 @@ and how much has been written to each partition since power-on.
   in the first seconds of start-up; never with an orderly restart and never after a plain power cut. Nothing is
   lost. Take the power away for a few seconds and give it back: unplug the Pi's power cable and plug it in
   again, or switch the dashboard off and on.
-- Summer heat has not been tried. The one evening on the bike was at 15 °C outside, and the Pi stayed between
-  27 and 41 °C in the closed tank compartment (ours is the one without the fan). It will be warmer in summer and we have no numbers yet; a Pi 3 A+
+- Summer heat has not been tried. The first evening on the bike was at 15 °C outside, and the Pi stayed between
+  27 and 41 °C in the closed tank compartment (ours is the one without the fan); on a longer ride at 16 °C, with
+  CarPlay on the dashboard all the time, it reached 56–61 °C. It will be warmer in summer and we have no numbers yet; a Pi 3 A+
   starts slowing itself down at 60 °C. Ducati makes a version of that compartment with a small fan, meant to
   keep a phone cool: recent bikes have it, and dealers have fitted it to earlier ones. If yours has it, all the
   better; if not, it is worth asking your dealer.
@@ -437,13 +475,13 @@ wrong or missing, then the rest.
 | | What | Why |
 |---|---|---|
 | 1 | **Steady on the bike**: find why the link to the dashboard dropped once, come back from a drop in seconds without the key, keep the bike from picking the iPhone at key-on | the first evening on the bike worked, with one drop |
-| 2 | **Siri on the bike**: it works on the bench with the joystick held down; try it with the real dashboard, then switch it on in the card image | hands stay on the bars |
+| 2 | **Siri on the bike**: it works, shown to the bike as a call; next, more rides with it, then on in the card image | hands stay on the bars |
 | 3 | **The new joystick moves on the bike** (one row at a time in lists, the wheel on left and right) | tried on the bench only |
 | 4 | **Status light**: the Pi's LED tells you when it is ready to pair and when something is wrong | the ready-made card has no screen to look at |
-| 5 | **SD card protection**: a read-only system | the bike cuts the power without warning |
+| 5 | **SD card protection**: done, the ready-made card protects itself at its first start; next, weeks of riding | the bike cuts the power without warning |
 | 6 | **Leaner system**: a first step is in the card image since 18 Nov 2026 (services a Pi on a bike never uses are off, no graphics and no sound card, the first-start setup of Raspberry Pi OS switches itself off after the first start). Next: the time the program itself takes to load | faster start, less power, less heat |
 | 7 | **Updates** without writing the card again | no new pairing at every update |
-| 8 | **Automatic recovery** after a Bluetooth radio error | today it takes key off and on |
+| 8 | **Automatic recovery** after a radio error or a failed Wi-Fi join: a first version is in the card image; next, see it work on the bike and find which load makes the radio chip give way | it took key off and on, three times in one ride |
 | 9 | Incoming calls and the caller's name checked on the bike, the name under the CarPlay icon, the card's time zone (today the logs are on London time) | details |
 
 ## Our build
@@ -470,6 +508,11 @@ wrong or missing, then the rest.
   tried one by one, which gave the joystick its present moves
 - 18 Nov 2026 — a leaner card image (fewer services, no graphics, the settings no longer rewritten at every
   start) and a line in `mtspi.txt` that switches Siri on
+- 19–21 Nov 2026 — the card protected against power cuts: 300 real power cuts in a night on a test card, then
+  built into the image, then 241 more on the card that went on the bike
+- 21 Nov 2026 — second ride: the protected card, real battery and signal on the dashboard, Siri from the helmet
+  made to work from the saddle by showing it to the bike as a call; three faults that needed the key, and at home
+  the new tries and the restarts that should make the key unnecessary
 
 ## Repository layout
 

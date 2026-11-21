@@ -89,7 +89,8 @@ $SUDO usermod -aG plugdev,netdev,bluetooth,audio "$U"
 getent group video >/dev/null && $SUDO usermod -aG video "$U"    # vcgencmd (temperature, under-voltage)
 # the bridge removes a stale Wi-Fi Direct interface (iw), asks the bike for an address (dhcpcd) and sets the clock
 # from the iPhone's time when there is no internet (date)
-echo "$U ALL=(root) NOPASSWD: /usr/sbin/iw, /usr/sbin/dhcpcd, /usr/bin/date" | $SUDO tee /etc/sudoers.d/mtspi >/dev/null
+# the last two are the recovery steps of mtspi/recovery.py: restart of the Wi-Fi Direct program, and of the Pi as a last resort
+echo "$U ALL=(root) NOPASSWD: /usr/sbin/iw, /usr/sbin/dhcpcd, /usr/bin/date, /usr/bin/systemctl restart mtspi-p2p.service, /usr/bin/systemctl reboot" | $SUDO tee /etc/sudoers.d/mtspi >/dev/null
 $SUDO chmod 440 /etc/sudoers.d/mtspi
 $SUDO visudo -cf /etc/sudoers.d/mtspi >/dev/null || { $SUDO rm -f /etc/sudoers.d/mtspi; echo "sudoers rule not valid, removed"; exit 1; }
 

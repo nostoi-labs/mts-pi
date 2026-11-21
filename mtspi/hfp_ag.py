@@ -53,6 +53,11 @@ VR_ENABLED = os.environ.get("HFP_VR", "0") == "1"
 if VR_ENABLED:
     AG_FEATURES |= 4
     SDP_FEATURES |= 0x0004
+# Siri shown to the bike as a call in progress. The Multistrada V4 S does not declare voice recognition (AT+BRSF=693,
+# bit 3 off): with only the voice channel open it sent plain silence and nothing reached the helmet; during a call it
+# does connect the helmet (tried on the bike, 21 Nov 2026). HFP_VR_CALL: "auto" (default) = as a call for a hands-free
+# that does not declare voice recognition, +BVRA for one that does; "1" = always as a call; "0" = never.
+VR_CALL_MODE = os.environ.get("HFP_VR_CALL", "auto")
 
 
 class _Profile(ServiceInterface):
@@ -234,7 +239,16 @@ class BridgeState:
     async def answer(self):
         return await self._cmd(cmd="answer")
 
+    def vr_as_call(self):
+        if not VR_ENABLED or VR_CALL_MODE == "0":
+            return False
+        if VR_CALL_MODE == "1":
+            return True
+        return not any(getattr(link, "hf_features", 0) & 8 for link in getattr(self.ag, "links", {}).values())
+
     async def hangup(self):
+        if self.calls and self.calls[0][0] == "siri":      # the "call" is Siri: the bike's hang-up closes Siri
+            return await self._cmd(cmd="siri", on=False)
         return await self._cmd(cmd="hangup")
 
     async def dial(self, number):
@@ -325,7 +339,8 @@ class BridgeState:
         elif ev == "outgoing":
             self.calls = [("bridge", {"state": "dialing", "number": m.get("number") or "", "name": m.get("name") or "", "dir": 0})]
         elif ev == "call_active":
-            c = dict(self.calls[0][1]) if self.calls else {"number": "", "name": m.get("name") or "", "dir": 1}
+            real = self.calls and self.calls[0][0] != "siri"     # a call that starts while Siri listens is not "Siri"
+            c = dict(self.calls[0][1]) if real else {"number": "", "name": m.get("name") or "", "dir": 1}
             c["state"] = "active"
             self.calls = [("bridge", c)]
         elif ev == "call_ended":
@@ -334,6 +349,10 @@ class BridgeState:
             self.vr = ev == "siri_start"
             if self.vr:
                 self.music_q.put(b"")              # wakes the "music" thread: it closes the stream without waiting
+            if self.vr and not self.calls and self.vr_as_call():
+                self.calls = [("siri", {"state": "active", "number": "", "name": "Siri", "dir": 0})]
+            elif not self.vr and self.calls and self.calls[0][0] == "siri":
+                self.calls = []
         states = [c["state"] for _, c in self.calls]
         self.ind["call"] = 1 if "active" in states else 0
         self.ind["callsetup"] = 1 if "incoming" in states else 2 if "dialing" in states else 0
@@ -383,6 +402,7 @@ class Link:
         self.clip = False
         self.slc = False
         self.hf_features = 0
+        self.bvra_told = False
         self.sent = {}
         self.sco = None
         self.audio_task = None
@@ -515,8 +535,11 @@ class Link:
                     self.send(f'+CLIP: "{num}",{145 if num.startswith("+") else 129},,,"{name}"')
             vr = bool(getattr(st, "vr", False))
             if vr != self.vr_sent:                 # Siri started or ended on the CarPlay side
-                if self.hf_features & 8:           # the bike declares voice assistant support: tell it
+                as_call = any(p == "siri" for p, _ in st.calls)
+                # the bike declares voice assistant support: tell it (and take it back only if it was told)
+                if self.hf_features & 8 and ((vr and not as_call) or (not vr and self.bvra_told)):
                     self.send(f"+BVRA: {int(vr)}")
+                    self.bvra_told = vr
                 self.log("hfp_ag_vr", on=vr, ok=True, source="carplay")
                 self.vr_sent = vr
             want_audio = st.ind["call"] == 1 or st.ind["callsetup"] in (2, 3) or self.ag.test_sco or vr
