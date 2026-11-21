@@ -15,6 +15,8 @@ WPA="/usr/sbin/wpa_cli -p ${WPA_CTRL:-/run/wpa_p2p} -i wlan0"
 STATE=/run/mtspi-wifi-mode
 
 log() { echo "$*"; }
+# seconds since power-on: the wall clock can jump (the iPhone or the network set it), and a jump must not end a wait early
+now() { cut -d. -f1 /proc/uptime; }
 
 bike_path() {   # the paired device whose name starts with DUCATI, on any radio (or BIKE_ADDR if set)
     local p
@@ -113,17 +115,17 @@ fi
 BIKE=""; [ "$PRO" = 1 ] || BIKE=$(bike_path)
 log "bike: ${BIKE:-not paired}$([ "$PRO" = 1 ] && echo " (pro variant: link through the external radio)")"
 to_bike
-last_bike=$(date +%s)
+last_bike=$(now)
 started=$last_bike
 tries=0
 early=0
 while true; do
     if [ "$PRO" = 1 ]; then
         if bike_connected; then
-            last_bike=$(date +%s)
+            last_bike=$(now)
             [ "$(cat $STATE)" = bike ] || to_bike
         fi
-        if [ "$(cat $STATE)" = bike ] && [ $(( $(date +%s) - last_bike )) -ge "$BIKE_GRACE" ] && home_visible; then
+        if [ "$(cat $STATE)" = bike ] && [ $(( $(now) - last_bike )) -ge "$BIKE_GRACE" ] && home_visible; then
             to_home
         fi
         sleep 4
@@ -131,7 +133,7 @@ while true; do
     fi
     [ -z "$BIKE" ] && BIKE=$(bike_path)
     if bike_connected; then
-        last_bike=$(date +%s)
+        last_bike=$(now)
         [ "$(cat $STATE)" = bike ] || to_bike
         modem_on
         # connected before phonebook and mySPIN were registered (the bike opened the link): one reconnection
@@ -150,14 +152,14 @@ while true; do
         # music to another device on the same radio stuttered
         tries=$((tries + 1))
         # waits at most 60 s for the bridge service, then connects anyway (music and calls)
-        if ! profiles_ready && [ $(( $(date +%s) - started )) -lt 60 ]; then
+        if ! profiles_ready && [ $(( $(now) - started )) -lt 60 ]; then
             :
         elif [ "$(cat $STATE)" = bike ] || { [ $((tries % 15)) -eq 0 ] && ! radio_busy; }; then
             busctl --timeout=8 call org.bluez "$BIKE" org.bluez.Device1 Connect >/dev/null 2>&1 \
                 && { log "bike connected"; continue; }
         fi
     fi
-    if [ "$(cat $STATE)" = bike ] && [ $(( $(date +%s) - last_bike )) -ge "$BIKE_GRACE" ] && home_visible; then
+    if [ "$(cat $STATE)" = bike ] && [ $(( $(now) - last_bike )) -ge "$BIKE_GRACE" ] && home_visible; then
         to_home
     fi
     sleep 4
