@@ -80,7 +80,7 @@ S = {
     "s_idle": ("Turn CarPlay off outside Ducati Connect", "Spegni CarPlay fuori da Ducati Connect"),
     "s_never": ("never", "mai"), "s_after": ("after {v}", "dopo {v}"),
     "s_quality": ("Image quality", "Qualità immagine"),
-    "s_q_max": ("maximum", "massima"), "s_q_high": ("high", "alta"), "s_q_med": ("medium", "media"), "s_q_low": ("low (more fps)", "bassa (più fps)"),
+    "s_q_high": ("high", "alta"), "s_q_med": ("medium", "media"), "s_q_low": ("low (more fps)", "bassa (più fps)"),
 }
 
 

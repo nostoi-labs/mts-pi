@@ -405,7 +405,7 @@ class Dashboard:
             i = IDLE_CHOICES.index(st.carplay_idle_off) if st.carplay_idle_off in IDLE_CHOICES else 0
             st.carplay_idle_off = IDLE_CHOICES[(i + step) % len(IDLE_CHOICES)]
         elif what == "quality":
-            i = QUALITY_CHOICES.index(st.jpeg_quality) if st.jpeg_quality in QUALITY_CHOICES else 1
+            i = QUALITY_CHOICES.index(st.jpeg_quality) if st.jpeg_quality in QUALITY_CHOICES else 0
             st.jpeg_quality = QUALITY_CHOICES[(i + step) % len(QUALITY_CHOICES)]
         self.b.apply_settings()
 

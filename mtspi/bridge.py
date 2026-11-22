@@ -180,6 +180,8 @@ class Bridge:
     recovery = None                    # mtspi/recovery.py, set in __init__ when the real radios are in use
     siri_mic_open = None               # an Event while Siri waits for the helmet microphone
     _control_idle_since = None
+    _ghost_noted = False               # the unknown voice link was already written in the log
+    _ghost_bounce_t = -1e9
 
     def __init__(self, a):
         self.a = a
@@ -1027,7 +1029,7 @@ class Bridge:
         if action == "restart_p2p":
             await loop.run_in_executor(None, rec.restart_p2p)
         elif action == "reboot":
-            await loop.run_in_executor(None, rec.reboot, why)
+            return await loop.run_in_executor(None, rec.reboot, why)     # False: not allowed now, or it failed
         elif action == "bounce":
             bike = self.bt.bike if self.bt else None
             if not bike:
@@ -1066,6 +1068,7 @@ class Bridge:
             self.log("radio_watch_off", error=str(e))
             return
         watch, loop, lines = recovery.RadioWatch(), asyncio.get_running_loop(), asyncio.Queue()
+        checking = []                              # the pending "is Bluetooth back?" look, one at a time
 
         def readable():
             try:
@@ -1087,9 +1090,59 @@ class Bridge:
             if what == "reset":
                 self.log("radio_reset", kernel=line.split(";", 1)[-1].strip()[:80])
                 self.recovery.radio_reset()
-            elif what == "stuck":
+                if not checking:
+                    checking.append(self.spawn(self.radio_back_check(checking)))
+            elif what in ("stuck", "dead"):
                 self.log("radio_stuck", kernel=line.split(";", 1)[-1].strip()[:80])
                 await self.recover("reboot", why="the Bluetooth radio no longer answers")
+            elif what == "ghost":
+                await self.voice_ghost()
+
+    async def voice_ghost(self):
+        """The chip carries a voice link the system does not know (bench, 22 Nov 2026: from then on the voice channel
+        to the helmet no longer opened, so no Siri and no sound in calls). Only a restart of the Pi cured it. During
+        a call nothing is done: the lines keep coming, so this is asked again every few seconds until the call ends."""
+        if self.call:
+            if not self._ghost_noted:
+                self._ghost_noted = True
+                self.log("radio_voice_ghost", waiting="call in progress")
+            return
+        if not self._ghost_noted:
+            self.log("radio_voice_ghost")
+        self._ghost_noted = True
+        if await self.recover("reboot", why="the radio chip carries a voice link that nobody opened") is False:
+            # restarted less than 15 minutes ago, or just started: closing the bike's link at least ends that voice link
+            now = time.monotonic()
+            if now - self._ghost_bounce_t >= recovery.GHOST_BOUNCE_EVERY_S:
+                self._ghost_bounce_t = now
+                await self.recover("bounce", why="the radio chip carries a voice link that nobody opened")
+
+    async def radio_powered(self):
+        """True/False = Bluetooth switched on or off as BlueZ sees it, None = BlueZ did not answer."""
+        try:
+            bus = await bluez.system_bus()
+            try:
+                objs = (await asyncio.wait_for(bluez.call(bus, "org.bluez", "/", "org.freedesktop.DBus.ObjectManager",
+                                                          "GetManagedObjects"), 8))[0]
+            finally:
+                bus.disconnect()
+            radios = [i["org.bluez.Adapter1"] for i in objs.values() if "org.bluez.Adapter1" in i]
+            return any(bluez._v(r.get("Powered")) for r in radios)      # no radio at all counts as off
+        except Exception:
+            return None
+
+    async def radio_back_check(self, checking):
+        """After the chip restarted itself Bluetooth normally is back in a few seconds (bike, 21 Nov 2026). On the bench
+        the same night it stayed switched off for good: then only a restart of the Pi brought it back."""
+        try:
+            await asyncio.sleep(recovery.RADIO_BACK_S)
+            if await self.radio_powered() is False:
+                await asyncio.sleep(5)                      # a second look, in case it was just coming up
+                if await self.radio_powered() is False:
+                    self.log("radio_stuck", kernel="Bluetooth still switched off after the chip restarted itself")
+                    await self.recover("reboot", why="Bluetooth did not come back after the radio chip restarted itself")
+        finally:
+            checking.clear()
 
     async def carplay_idle_off(self):
         """After leaving Ducati Connect: turns CarPlay off after a while, so the audio goes back to Bluetooth."""

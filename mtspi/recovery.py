@@ -4,12 +4,22 @@ ignition (or the Pi's plug) to be cycled by hand:
 - the bike's Wi-Fi gave no address: the join failed once and nothing tried again;
 - the radio chip restarted itself ("hci0: hardware error"): Bluetooth came back in 5 s, Wi-Fi Direct never did;
 - the Bluetooth radio stopped answering ("hci0: command tx timeout" every 2 s): everything on Bluetooth was gone.
+On the bench the same night, with Bluetooth tethering traffic on top of music and Wi-Fi: "hardware error", then the
+reset itself unanswered ("Opcode 0x0c03 failed: -110") and the radio left switched off. Switching it on again and
+reloading its driver did not bring it back; an orderly restart of the Pi did.
+
+On the bench on 22 Nov 2026, after three hours of Siri opened and closed every 20 s, the last hour and a half at
+74-76 °C: the voice channel to the helmet stopped opening, with the radio up and no error from it. The kernel filled
+with "SCO packet for unknown connection handle" (about 265 a second): the chip carried a voice link the system no
+longer knew about. Closing the helmet's link stopped those lines, but new voice links still failed; switching
+Bluetooth off and on gave three good openings in eight; an orderly restart of the Pi gave nine in nine.
 
 What happens now, from the mildest step to the last one:
   1. a failed join is tried again as soon as the bike offers its Wi-Fi again (it usually does within a second);
   2. if the bike stays silent after a failure, its Bluetooth link is closed and reopened (what unplugging the Pi did);
   3. after two failures in a row the Wi-Fi Direct program is restarted;
-  4. if nothing helps, or the Bluetooth radio no longer answers, the Pi restarts: once, then not again for 15 minutes.
+  4. if nothing helps, the Bluetooth radio no longer answers, or it carries a voice link nobody opened, the Pi
+     restarts: once, then not again for 15 minutes.
 Nothing here acts unless a join has failed or the kernel reports the radio: a bike that simply does not offer its
 Wi-Fi (Ducati Connect switched off) is left alone. No step is taken during a phone call, except for a dead radio."""
 import json
@@ -25,21 +35,37 @@ REBOOT_IDLE_S = 90           # bike still silent this long after the last Blueto
 REBOOT_MIN_UPTIME_S = 120
 REBOOT_EVERY_S = 900
 RADIO_RESET_RECENT_S = 180
+RADIO_BACK_S = 20            # after the chip restarted itself: Bluetooth must be switched on again within this time
 STUCK_COUNT, STUCK_WINDOW_S = 4, 30
+# Voice packets for a link the system does not know. One to four of these lines can follow an ordinary closing; the
+# fault writes ten every five seconds (the kernel holds back the rest).
+GHOST_COUNT, GHOST_WINDOW_S = 20, 60
+GHOST_BOUNCE_EVERY_S = 60    # when the restart is not allowed: the bike's link is closed and reopened, at most this often
 
 
 class RadioWatch:
-    """Reads the kernel's lines about the Bluetooth radio: "stuck" when it stopped answering, "reset" when the chip restarted."""
+    """Reads the kernel's lines about the Bluetooth radio: "stuck" when it stopped answering, "reset" when the chip
+    restarted, "dead" when it did not come back, "ghost" when it carries a voice link the system does not know."""
 
     def __init__(self, now=time.monotonic):
         self.now = now
         self.timeouts = []
+        self.ghosts = []
 
     def feed(self, line):
         if "Bluetooth: hci" not in line:
             return None
+        if "Opcode 0x0c03 failed" in line:          # the reset after a hardware error got no answer: the radio is gone
+            return "dead"
         if "hardware error" in line:
             return "reset"
+        if "SCO packet for unknown connection handle" in line:
+            t = self.now()
+            self.ghosts = [x for x in self.ghosts if t - x <= GHOST_WINDOW_S] + [t]
+            if len(self.ghosts) >= GHOST_COUNT:
+                self.ghosts = []
+                return "ghost"
+            return None
         if "tx timeout" in line:                    # "command tx timeout", "command 0x041f tx timeout", "link tx timeout"
             t = self.now()
             self.timeouts = [x for x in self.timeouts if t - x <= STUCK_WINDOW_S] + [t]

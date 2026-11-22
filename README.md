@@ -264,8 +264,7 @@ disconnecting the iPhone in the bike's Bluetooth menu brings it back.
 ![Settings](docs/settings-screen.png)
 
 The settings page, on the dashboard: language (English or Italian), CarPlay at start-up, turning CarPlay off when
-you leave Ducati Connect, and picture quality (higher quality means slightly fewer frames, and the highest one
-more heat). To leave the page, use its last row or hold the joystick up: in the Pi's own pages that is Back, as
+you leave Ducati Connect, and picture quality (high, or low for slightly more frames). To leave the page, use its last row or hold the joystick up: in the Pi's own pages that is Back, as
 it is in CarPlay.
 
 ## What works
@@ -285,7 +284,7 @@ it is in CarPlay.
 | The Pi's home screen in Ducati Connect, joystick | **bike** | first tried on the Multistrada on 24 Oct 2026 |
 | Text messages on the bike | not applicable | the Multistrada's dashboard has no function for messages |
 | Siri from the helmet, started by holding the joystick down | **bike** (21 Nov 2026), switched off in the card image | the Pi shows Siri to the bike as a call in progress and the bike connects the helmet, about 3 s later, with a tone of its own: speak after the tone. The dashboard shows a call while Siri listens. Dictated messages and voice search in the maps work the same way. The line `SIRI=on` in `mtspi.txt` on the card switches it on |
-| Coming back without the key when the bike's Wi-Fi or the Pi's radio fail | bench | a failed join is tried again; if the bike stays silent its Bluetooth link is closed and reopened; then the Wi-Fi Direct program is restarted; as a last resort, or when the Bluetooth radio no longer answers, the Pi restarts itself (at most once in 15 minutes). Written after the ride of 21 Nov 2026, not yet seen at work on the bike |
+| Coming back without the key when the bike's Wi-Fi or the Pi's radio fail | bench | a failed join is tried again; if the bike stays silent its Bluetooth link is closed and reopened; then the Wi-Fi Direct program is restarted; as a last resort, or when the Bluetooth radio no longer answers, stays off, or carries a voice link nobody opened, the Pi restarts itself (at most once in 15 minutes). Written after the ride of 21 Nov 2026, not yet seen at work on the bike |
 
 "Bike" means: tried on the Multistrada V4 S on 16 Nov 2026 (or on the date given), with the ready-made card. "Bench" means: real Pi,
 real Carlinkit, real iPhone, a helmet intercom playing the part of the bike's Bluetooth, an emulated dashboard
@@ -302,7 +301,7 @@ for the screen link, Wi-Fi on 2.4 GHz as on the bike.
 | Music back after a call closed from the bike | 0.5 s | bike, 16 Nov 2026 |
 | Address from the bike's Wi-Fi after joining it | 2.3–4.9 s in six joins (6–9 s before); once no address at all | bike, 21 Nov 2026 |
 | Helmet microphone open after the bike is told a call has started | about 3.3 s (the same for Siri and for a dictated message) | bike, 21 Nov 2026 |
-| Temperature of the Pi after half an hour of CarPlay on the dashboard, 16 °C outside | 56 °C on average at high quality (60 at most); 61 °C at the highest quality, where the Pi starts slowing itself down | bike, 21 Nov 2026 |
+| Temperature of the Pi after half an hour of CarPlay on the dashboard, 16 °C outside | 56 °C on average at high quality (60 at most); 61 °C at a higher quality that has since been removed, where the Pi starts slowing itself down | bike, 21 Nov 2026 |
 | First start of the protected card: power-on → protected and ready | 2–3 min (one restart by itself) | bench, 20 Nov 2026 |
 | Power cuts survived by the protected card in one night | 241 of 241 (300 of 300 on the test card the night before) | bench, 21 Nov 2026 |
 | Power from the USB socket in the tank compartment (1 A at most) | no under-voltage through engine start and a ride; current on the bike not measured | bike, 16 Nov 2026 |
@@ -380,10 +379,19 @@ Notes for anyone building something similar. Each of these cost an evening or mo
   speak.
 - **Bluetooth and Wi-Fi share one chip, and it can be asked too much.** On the second ride that chip gave way
   twice: once the Bluetooth half stopped answering the system, once it restarted itself and Wi-Fi Direct did not
-  come back. Both times a lot was going on at once: music, calls, the screen at the highest quality, and two
+  come back. Both times a lot was going on at once: music, calls, the screen at a quality level that has since been removed, and two
   things of ours that a normal card does not have, a remote login carried over Bluetooth tethering and a
   Bluetooth scan. The rider heard small gaps in the music every time we worked on the Pi through that tethering.
-  We do not know yet which load is one too many; what we changed is that the Pi now notices and recovers.
+  A night on the bench (22 Nov 2026) found two separate causes. Busy Bluetooth tethering together with music
+  breaks the chip every time, in two to five minutes; light tethering does not. And with the Pi at 70–76 °C,
+  opening the voice channel again and again broke it three times with no tethering at all, while the same test
+  at 49 °C ran for an hour and a half without a fault. We heated the Pi by keeping its processor busy, so heat
+  and processor load are not yet told apart. One of those faults came with no error from the chip: voice packets
+  arrived for a link nobody had opened and the voice channel stopped opening. Reconnecting the headset did not
+  cure it, switching Bluetooth off and on did not either; restarting the Pi did.
+- **A bench that says "with music" must check that music is playing.** After some restarts the iPhone does not
+  resume its music by itself, and five hours of our night ran in silence before we noticed. The results above
+  say which tests had music and which did not: the hot ones did not.
 - **Count waits from power-on, not from the clock.** A Pi has no clock battery: the right time arrives after the
   start (from the network, or here from the iPhone) and the clock jumps. A 45-second wait measured with the clock
   ended after 16.
@@ -423,13 +431,18 @@ and how much has been written to each partition since power-on.
 
 - All the iPhone's sound goes through CarPlay: if CarPlay stops, there is no music and there are no calls until
   it is back.
-- The Pi's radio chip (Bluetooth and Wi-Fi together) gave way twice in one ride (21 Nov 2026), with a lot going
-  on at once; we do not know yet which load is one too many. Both times it took key off and on. The Pi now
-  notices: when the Bluetooth radio no longer answers it restarts itself (about a minute without CarPlay), and
-  when Wi-Fi to the bike does not come back it tries again, reconnects the bike, and restarts as a last resort,
-  at most once in 15 minutes. Each restart is noted in `/var/lib/mtspi/recovery.log`. Tried on the bench only.
-- The highest screen quality in the Pi's settings doubles the data sent to the dashboard and adds about 5 °C.
-  The ride with the two radio faults was at that quality; the half hour after it, at high quality, had none.
+- The Pi's radio chip (Bluetooth and Wi-Fi together) gave way twice in one ride (21 Nov 2026), and both times
+  it took key off and on. On the bench two things break it: busy Bluetooth tethering together with music (a tool
+  of ours, a normal card has none), and heat, 70 °C and more, with the voice channel opening often. A summer ride
+  can reach that temperature; the Pi had 59–61 °C on a 16 °C day. The Pi now notices: when the Bluetooth radio no
+  longer answers, stays off after an error, or carries a voice link nobody opened, it restarts itself (about a
+  minute without CarPlay), and when Wi-Fi to the bike does not come back it tries again, reconnects the bike, and
+  restarts as a last resort, at most once in 15 minutes. Each restart is noted in `/var/lib/mtspi/recovery.log`.
+  On the bench the restart brought everything back seven times out of seven; the voice-link case is written and
+  tested but has not yet met a real fault. None of this has been seen on the bike.
+- The Pi's settings had a "maximum" picture quality. It doubled the data sent to the dashboard and added about
+  5 °C, for a picture that looked the same on the bike. The ride with the two radio faults was at that quality;
+  the half hour after it, at high quality, had none. It has been removed: the choices are high and low.
 - Once, music stuttered for about a minute after an incoming call.
 - On the bike, once in one evening, the dashboard went silent on Wi-Fi and Bluetooth together for about half a
   minute at the end of a ride, while the Pi's link to the iPhone stayed up. We do not know why. Music came back
@@ -481,7 +494,7 @@ wrong or missing, then the rest.
 | 5 | **SD card protection**: done, the ready-made card protects itself at its first start; next, weeks of riding | the bike cuts the power without warning |
 | 6 | **Leaner system**: a first step is in the card image since 18 Nov 2026 (services a Pi on a bike never uses are off, no graphics and no sound card, the first-start setup of Raspberry Pi OS switches itself off after the first start). Next: the time the program itself takes to load | faster start, less power, less heat |
 | 7 | **Updates** without writing the card again | no new pairing at every update |
-| 8 | **Automatic recovery** after a radio error or a failed Wi-Fi join: a first version is in the card image; next, see it work on the bike and find which load makes the radio chip give way | it took key off and on, three times in one ride |
+| 8 | **Automatic recovery** after a radio error or a failed Wi-Fi join: a first version is in the card image; next, see it work on the bike, and on the bench tell heat from processor load | it took key off and on, three times in one ride |
 | 9 | Incoming calls and the caller's name checked on the bike, the name under the CarPlay icon, the card's time zone (today the logs are on London time) | details |
 
 ## Our build

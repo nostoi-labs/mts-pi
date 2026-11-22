@@ -139,6 +139,28 @@ def test_bridge_reads_what_the_listener_heard():
         assert b.tyres()["listening"] is False
 
 
+def test_picture_quality_has_no_maximum():
+    """22 Nov 2026: the highest quality doubled the data to the dashboard and added about 5 °C. It is gone from the
+    settings page, and a card that had it saved comes back to high."""
+    assert settings.QUALITY_CHOICES == [80, 55]
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "settings.json")
+        json.dump({"jpeg_quality": 90, "lang": "en"}, open(path, "w"))
+        assert settings.Settings.load(path).jpeg_quality == 80
+        json.dump({"jpeg_quality": 55, "lang": "en"}, open(path, "w"))
+        assert settings.Settings.load(path).jpeg_quality == 55
+    b, d, saved = pages()
+    b.launcher.page = "settings"
+    b.launcher.set_row = [r[0] for r in b.launcher.settings_rows()].index("quality")
+    seen = []
+    for key in ("OK", "OK", "RIGHT", "LEFT", "LEFT"):       # every way of changing the row, round and round
+        d.on_key(key, "CLICK")
+        seen.append(b.settings.jpeg_quality)
+    assert seen == [55, 80, 55, 80, 55]
+    i18n.set_lang("en")
+    assert [settings.quality_label(v) for v in settings.QUALITY_CHOICES] == ["high", "low (more fps)"]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

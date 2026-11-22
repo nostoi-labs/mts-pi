@@ -60,6 +60,39 @@ def test_radio_timeouts_far_apart_are_not_a_stuck_radio():
         now.t += 20
 
 
+def test_radio_dead_when_its_own_reset_gets_no_answer():
+    """Bench, 21 Nov 2026, Bluetooth tethering traffic on top of music and Wi-Fi: the three lines as they came."""
+    watch = recovery.RadioWatch(now=Clock())
+    lines = [RESET, "3,3101,5056806456,-;Bluetooth: hci0: Opcode 0x0c03 failed: -110", RESET]
+    assert [watch.feed(x) for x in lines] == ["reset", "dead", "reset"]
+
+
+GHOST = "3,9105,14292916424,-;Bluetooth: hci0: SCO packet for unknown connection handle 6"
+
+
+def test_voice_packets_for_an_unknown_link_twenty_in_a_minute():
+    """Bench, 22 Nov 2026: the kernel writes ten of these lines every five seconds while the fault lasts."""
+    now = Clock()
+    watch = recovery.RadioWatch(now=now)
+    seen = []
+    for burst in range(2):
+        for _ in range(10):
+            seen.append(watch.feed(GHOST))
+        now.t += 5
+    assert seen == [None] * 19 + ["ghost"]
+    assert watch.feed(GHOST) is None                 # the count starts again: the next call comes after another twenty
+
+
+def test_a_few_stray_voice_packets_after_a_closing_are_nothing():
+    """Same bench night, hours before the fault: one line, then four lines 25 minutes later."""
+    now = Clock()
+    watch = recovery.RadioWatch(now=now)
+    assert watch.feed(GHOST) is None
+    for _ in range(200):                             # a stray handful every minute and a half, for hours
+        now.t += 90
+        assert [watch.feed(GHOST) for _ in range(4)] == [None] * 4
+
+
 def test_radio_reset_and_other_lines():
     watch = recovery.RadioWatch(now=Clock())
     assert watch.feed(RESET) == "reset"
@@ -350,6 +383,59 @@ def test_guard_reconnects_a_silent_bike_only_after_a_failure():
             assert acted == ["bounce"]
         finally:
             bridge.asyncio.sleep = saved
+
+
+def test_bluetooth_still_off_after_a_chip_restart_restarts_the_pi():
+    import asyncio
+    with tempfile.TemporaryDirectory() as tmp:
+        rec, _, _, _, _ = make(tmp)
+        bridge, me, logs, acted = _bridge_with(rec)
+        answers = []
+
+        async def radio_powered():
+            return answers.pop(0)
+        me.radio_powered = radio_powered
+        real_sleep, saved = asyncio.sleep, bridge.asyncio.sleep
+
+        async def fast_sleep(s, *a):
+            await real_sleep(0)
+        bridge.asyncio.sleep = fast_sleep
+        try:
+            for seen, expected in (([True], []), ([None], []), ([False, True], []), ([False, False], ["reboot"])):
+                answers[:] = seen
+                del acted[:]
+                checking = [object()]
+                asyncio.run(bridge.Bridge.radio_back_check(me, checking))
+                assert acted == expected, (seen, acted)
+                assert checking == []                    # the next chip restart gets its own look
+        finally:
+            bridge.asyncio.sleep = saved
+
+
+def test_unknown_voice_link_restarts_the_pi_but_not_during_a_call():
+    import asyncio
+    with tempfile.TemporaryDirectory() as tmp:
+        rec, _, _, _, _ = make(tmp)
+        bridge, me, logs, acted = _bridge_with(rec, _ghost_noted=False, _ghost_bounce_t=-1e9)
+        me.call = {"state": "active"}
+        for _ in range(3):
+            asyncio.run(bridge.Bridge.voice_ghost(me))
+        assert acted == []                                               # the call is left alone
+        assert [ev for ev, _ in logs] == ["radio_voice_ghost"]           # and noted once, not at every round
+        me.call = None
+        asyncio.run(bridge.Bridge.voice_ghost(me))
+        assert acted == ["reboot"]
+
+        # the restart is not allowed (the Pi restarted a few minutes ago): the bike's link is closed and reopened
+        # instead, and not again within the minute
+        async def refused(action, why):
+            acted.append(action)
+            return False if action == "reboot" else None
+        me.recover = refused
+        del acted[:]
+        asyncio.run(bridge.Bridge.voice_ghost(me))
+        asyncio.run(bridge.Bridge.voice_ghost(me))
+        assert acted == ["reboot", "bounce", "reboot"]
 
 
 if __name__ == "__main__":

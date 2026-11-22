@@ -272,7 +272,8 @@ async def connect_paired_phones(log):
         objs = (await call(bus, "org.bluez", "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects"))[0]
         for path, ifaces in objs.items():
             dev = ifaces.get("org.bluez.Device1")
-            if dev and _v(dev.get("Paired")) and not _v(dev.get("Connected")) and UUID_HFP_AG in (_v(dev.get("UUIDs")) or []):
+            if dev and _v(dev.get("Paired")) and not _v(dev.get("Connected")) and not _v(dev.get("Blocked")) \
+                    and UUID_HFP_AG in (_v(dev.get("UUIDs")) or []):
                 try:
                     # hands-free only: Connect of all profiles towards an iPhone in CarPlay hangs (29 Oct 2026)
                     await asyncio.wait_for(call(bus, "org.bluez", path, "org.bluez.Device1", "ConnectProfile",
@@ -335,7 +336,9 @@ async def keep_connected(log, in_call=lambda: False, headsets=False):
                 phone = UUID_HFP_AG in uuids
                 headset = headsets and not phone and not bike_on and not _is_bike(d, bike_addr) \
                     and bool(uuids & {UUID_HFP_HF, UUID_A2DP_SINK})
-                if _v(d.get("Connected")) or not _v(d.get("Paired")) or _v(d.get("Address")) in own \
+                # a blocked device is one the owner does not want connected: BlueZ refuses its incoming connections,
+                # and the Pi must not be the one calling it (21 Nov 2026: a blocked iPhone was called back every 30 s)
+                if _v(d.get("Connected")) or not _v(d.get("Paired")) or _v(d.get("Blocked")) or _v(d.get("Address")) in own \
                         or not (phone or headset):
                     if _v(d.get("Connected")):
                         seen.add(path)

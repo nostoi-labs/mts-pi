@@ -8,7 +8,9 @@ from dataclasses import asdict, dataclass
 from . import i18n
 
 IDLE_CHOICES = [30, 60, 120, 0]          # seconds; 0 = never
-QUALITY_CHOICES = [90, 80, 55]           # JPEG: maximum, high, low (10 Nov 2026, standard variant at 2.4 GHz, moving map: q90 20 fps, q80 22, q55 24; CarPlay ~18)
+QUALITY_CHOICES = [80, 55]               # JPEG: high, low (10 Nov 2026, standard variant at 2.4 GHz, moving map: q80 22 fps, q55 24; CarPlay ~18)
+# There was a "maximum" (q90, 20 fps) until 22 Nov 2026: twice the data to the dashboard and about 5 °C more, for a
+# picture that looks the same on the bike. Removed; a card that had it saved goes back to high.
 
 
 @dataclass
@@ -29,6 +31,8 @@ class Settings:
                     setattr(s, k, v)
         except (OSError, ValueError):
             pass
+        if s.jpeg_quality not in QUALITY_CHOICES:
+            s.jpeg_quality = QUALITY_CHOICES[0]
         i18n.set_lang(s.lang)
         return s
 
@@ -49,4 +53,4 @@ def idle_label(v: int) -> str:
 
 
 def quality_label(v: int) -> str:
-    return {90: i18n.t("s_q_max"), 80: i18n.t("s_q_high"), 55: i18n.t("s_q_low")}.get(v, str(v))
+    return {80: i18n.t("s_q_high"), 55: i18n.t("s_q_low")}.get(v, str(v))
