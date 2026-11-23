@@ -1045,6 +1045,8 @@ class Bridge:
                 self.spawn(self.mirror_guard())
                 self.spawn(self.radio_watch())
                 self.spawn(self.slow_guard())
+            if self.a.carlinkit == "usb":
+                self.spawn(self.connecting_guard())
         while True:
             try:
                 ep = await discover_vehicle(self.log, self.a.discovery_port, timeout=3600)
@@ -1273,7 +1275,6 @@ class Bridge:
         rec, loop = self.recovery, asyncio.get_running_loop()
         bt_off = recovery.Lasting(recovery.BT_OFF_S)
         no_dongle = recovery.Lasting(recovery.NO_CARLINKIT_S)
-        connecting = recovery.Lasting(recovery.CONNECTING_S)
         usb, tick, absent_noted = self.a.carlinkit == "usb", 0, False
         while True:
             await asyncio.sleep(5)
@@ -1292,16 +1293,25 @@ class Bridge:
                 else:
                     self.log("carlinkit_absent", for_s=recovery.NO_CARLINKIT_S * no_dongle.times)
                     await loop.run_in_executor(None, lambda: rec.reboot("the Carlinkit is not on the USB port", key="carlinkit"))
+
+    async def connecting_guard(self):
+        """CarPlay left on "connecting" with the iPhone in reach: the session is opened again (carplay_unstick).
+        On its own, apart from slow_guard: it restarts nothing, so it also runs where the Pi's restarts are switched
+        off or there is no bike's Wi-Fi to look after (the bench, where until 23 Nov 2026 it never ran, and so had
+        never been seen at work)."""
+        connecting = recovery.Lasting(recovery.CONNECTING_S)
+        while True:
+            await asyncio.sleep(5)
             if connecting.feed(self.carplay_waiting()):
                 await self.carplay_unstick(connecting.times)
 
     async def carplay_unstick(self, times):
-        """CarPlay has been "connecting" for a minute and a half (times = 1), three minutes (2), and so on."""
+        """CarPlay has been "connecting" for recovery.CONNECTING_S seconds (times = 1), twice that (2), and so on."""
         if times == 1:
             self.log("carplay_stuck", step="session opened again")
             try:
                 await self.dongle.stop()
-                await asyncio.sleep(2)
+                await asyncio.sleep(5)       # closed, five seconds, opened: the phone was back every time (23 Nov 2026)
                 self.request_carplay()
             except (ConnectionError, OSError) as e:
                 self.log("carplay_stuck", step="failed", error=str(e)[:80])

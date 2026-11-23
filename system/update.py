@@ -473,7 +473,7 @@ def on_boot(action):
 
 
 def report(lines):
-    text = "MTS Pi update\n" + time.strftime("%Y-%m-%d %H:%M") + " (the Pi's own clock)\n\n" + "\n".join(lines) + "\n"
+    text = "MTS Pi update\n" + time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()) + " (the Pi's own clock)\n\n" + "\n".join(lines) + "\n"
     say(*lines)
     return on_boot(lambda: (BOOT / RESULT).write_text(text))
 

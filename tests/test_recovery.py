@@ -495,7 +495,7 @@ def test_a_missing_carlinkit_restarts_the_pi_once_until_it_is_seen_again():
         assert not rec.carlinkit_tried()
 
 
-def _slow_guard(tmp, limits, ticks, **state):
+def _slow_guard(tmp, limits, ticks, guard="slow_guard", **state):
     """Runs the bridge's guard for a few of its turns, with the three limits given and a stand-in bridge."""
     import asyncio
     rec, _, cmds, _, _ = make(tmp)
@@ -522,7 +522,7 @@ def _slow_guard(tmp, limits, ticks, **state):
 
     async def run():
         try:
-            await bridge.Bridge.slow_guard(me)
+            await getattr(bridge.Bridge, guard)(me)
         except asyncio.CancelledError:
             pass
     bridge.asyncio.sleep = fast_sleep
@@ -575,7 +575,7 @@ def test_carplay_left_on_connecting_is_helped_only_with_the_iphone_in_reach():
         for extra, helped in cases:
             state = dict(radio_powered=_radio(True), dongle=opening, carplay_state=lambda: "connecting")
             state.update(extra)
-            _, _, _, cmds, unstuck = _slow_guard(tmp, (999, 999, 0.05), 12, **state)
+            _, _, _, cmds, unstuck = _slow_guard(tmp, (999, 999, 0.05), 12, guard="connecting_guard", **state)
             assert (unstuck[:2] == [1, 2]) == helped, (extra.keys(), unstuck)
             assert not cmds                               # never the Pi's restart for this
 

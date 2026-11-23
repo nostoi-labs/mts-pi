@@ -103,6 +103,7 @@ is about 7 cm wide.*
 | Carlinkit **CPC200-CCPA** | The "wireless CarPlay for Android head units" dongle (it shows up as *AutoKit*). **Not** the "wired to wireless" adapters such as the 2air: those need a car that already has CarPlay. There is nothing to check before buying: any CPC200-CCPA should do, with the firmware it comes with (the code accepts both USB IDs these dongles use, 1314:1520 and 1314:1521). We have tried one unit; for reference, ours reports 1314:1520 and firmware 2025.10.15. Once yours works, do not update its firmware. |
 | microSD card | 8 GB is enough for space (the installed system takes about 3 GB). In practice: a 32 GB **Class 10** card (A1 if you can), from about 13 € for a budget brand to about 23 € for SanDisk or Samsung at late-2026 prices. Our bench tests ran on a SanDisk Ultra 32 GB (Class 10, A1), the evening on the bike on a SanDisk Extreme 64 GB. Avoid old Class 4 cards: we tried one, writing the image took about 20 minutes instead of 3. A "high endurance" card is not needed: the Pi writes very little. |
 | Case | Optional. We printed this one: [Ultra-slim snap-fit case for Raspberry Pi 3 A+](https://makerworld.com/en/models/2547063-ultra-slim-snap-fit-case-for-raspberry-pi-3a-plus) on MakerWorld; with it the Pi fits in the tank compartment (photo in [Our build](#our-build)). No 3D printer: the official Raspberry Pi 3 A+ case (red and white, about 5 € from Raspberry Pi resellers, often three times that on Amazon) is the simple choice; we have not measured temperatures inside it. Plastic is the safe choice: a closed metal case can weaken Wi-Fi and Bluetooth, which all go through the antenna on the board, and we have not tested one. Skip cases with a fan: a small 5 V fan is rated 0.1–0.2 A, which on top of our 0.89 A peak is too much for a 1 A socket. |
+| Ventilated tank compartment | Strongly recommended, above all for summer: see [Known limits](#known-limits). Standard, as far as we know, from model year 2023; a dealer can fit it to earlier bikes. Ours is the one without the fan, and everything measured here was measured in it. |
 | 5 V power | On the bike: the **USB socket in the tank compartment**, which gives 1 A at most. That is where we tested it: no under-voltage through engine start, a ride, music and a call. On the bench the Pi with the dongle drew **0.54–0.89 A at 5 V**, so the margin on that socket is small: nothing else should share it. At home, a supply of 2 A or more. A weak supply or a poor cable causes under-voltage and random faults. |
 | Power cable | **USB-A to micro-USB**: the Pi 3 A+ is powered through its micro-USB port. Keep it short, 15–30 cm: there is little room in the tank compartment, and long thin cables lose voltage. A micro-USB plug **angled at 90°** sits better there than a straight one; for example [this 30 cm one](https://www.amazon.it/dp/B0B6YWZ42J) (an example of the kind, not a cable we have tried: check which way the plug points before you buy). |
 | iPhone | Any iPhone with CarPlay. |
@@ -323,6 +324,8 @@ for the screen link, Wi-Fi on 2.4 GHz as on the bike.
 | Power cuts survived by the protected card in one night | 241 of 241 (300 of 300 on the test card the night before) | bench, 21 Nov 2026 |
 | An update from a file on a protected card | installed in 10 s, then one restart; 11 power cuts at 11 different moments of it, each finished by the Pi at the next start | bench, 23 Nov 2026 |
 | CarPlay asked for 15 pictures a second instead of 30 (map, music, Siri) | the program's work from 141% of one processor to 96%; 59–61 °C instead of 62–65 over two hours | bench, 23 Nov 2026 |
+| Each CarPlay frame sent to the dashboard once (the program was sending about 22 pictures a second for 15 frames), map and music, three-minute windows one after the other | pictures sent from 22–23 a second to 14–15; the program's work from 79–89% of one processor to 59–69%; data over the radio down by a sixth to a half | bench, 23 Nov 2026 |
+| Half an hour of CarPlay with the map following a route and no music, at 15 pictures a second and then at 30, with that fix; room at 21 °C | at 15: 14 pictures a second sent, 57% of one processor, 53 °C on average (55 at most); at 30: 18 a second (the phone produced no more), 72%, 55 °C (57 at most) | bench, 23 Nov 2026 |
 | Changing between 15 and 30 pictures a second from the settings | CarPlay back 4.2–4.4 s after it is opened again, about 9 s without it in all | bench, 23 Nov 2026 |
 | Power from the USB socket in the tank compartment (1 A at most) | no under-voltage through engine start and a ride; current on the bike not measured | bike, 16 Nov 2026 |
 | Temperature in the tank compartment (the one without the fan), 15 °C outside | 27–41 °C | bike, 16 Nov 2026 |
@@ -510,9 +513,14 @@ and how much has been written to each partition since power-on.
 - Summer heat has not been tried. The first evening on the bike was at 15 °C outside, and the Pi stayed between
   27 and 41 °C in the closed tank compartment (ours is the one without the fan); on a longer ride at 16 °C, with
   CarPlay on the dashboard all the time, it reached 56–61 °C. It will be warmer in summer and we have no numbers yet; a Pi 3 A+
-  starts slowing itself down at 60 °C. Ducati makes a version of that compartment with a small fan, meant to
-  keep a phone cool: recent bikes have it, and dealers have fitted it to earlier ones. If yours has it, all the
-  better; if not, it is worth asking your dealer.
+  starts slowing itself down at 60 °C. Ducati makes a version of that compartment with a small fan in its lid,
+  meant to keep a phone cool: it blows outside air down onto whatever is in the tray, and the air leaves through
+  slots in the bottom. As far as we know every Multistrada V4 has it from model year 2023, and dealers fit it to
+  earlier bikes. **We strongly recommend it**: on the bench, in a room at about 21 °C, the Pi already runs at
+  60 °C with a map and music, and a closed compartment in the sun will be much warmer than that room. We have
+  not tried the ventilated one ourselves yet (our bike has the earlier one), so we cannot say by how many degrees it
+  helps. If your bike has it, put the Pi with the openings of its case facing up, and leave the slots in the
+  bottom of the tray free.
 - The files in `myspin/` are binary and built for Raspberry Pi OS 64-bit with Python 3.13 only.
 - Tested with one bike, one iPhone and one dongle.
 - The "pro" variant mentioned in the code (a second, external Bluetooth radio) is not part of this release.

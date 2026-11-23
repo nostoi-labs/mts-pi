@@ -31,7 +31,9 @@ On the bench on 22 Nov 2026 three more faults showed up that are not an error bu
     Pi did. After two minutes without it the Pi restarts, once: if it is still not there, somebody took it off, and
     nothing more is done until it has been seen again.
   - CarPlay left on "Connecting" with the iPhone connected over Bluetooth; restarting this program brought it back.
-    After a minute and a half the session with the Carlinkit is closed and opened again; if that does not help the
+    After half a minute the session with the Carlinkit is closed and opened again (seen at work on the bench of
+    23 Nov 2026: the iPhone restarted twice, CarPlay stayed on "Connecting" both times, and both times it was back
+    6 seconds after the session was opened again); if that does not help,
     nothing more for now (restarting the program is what worked by hand, but the same state is an ordinary one with
     a locked phone in a pocket: not done until the fault can be told apart)."""
 import json
@@ -59,7 +61,8 @@ GHOST_BOUNCE_EVERY_S = 60    # when the restart is not allowed: the bike's link 
 GARBLED_COUNT, GARBLED_WINDOW_S = 30, 10
 BT_OFF_S = 60                # Bluetooth switched off this long, at the start or later: the Pi restarts
 NO_CARLINKIT_S = 120         # the Carlinkit not on the USB port this long: the Pi restarts, once
-CONNECTING_S = 90            # CarPlay "connecting" this long with the iPhone in reach: first the session, then the program
+CONNECTING_S = 30            # CarPlay "connecting" this long with the iPhone in reach (it normally takes 5-13 s): the session is
+                             # opened again. It was 90 until 23 Nov 2026: two minutes without CarPlay, most of them waiting
 
 
 class RadioWatch:
