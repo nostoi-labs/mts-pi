@@ -13,7 +13,7 @@ printf '#!/bin/sh\necho "tester:x:1000:1000::%s/home:/bin/sh"\n' "$T" > "$T/bin/
 printf '#!/bin/sh\nfor a in "$@"; do last=$a; done\nmkdir -p "$last"\n' > "$T/bin/install"; chmod +x "$T/bin/install"
 fail=0
 check() { if eval "$2"; then echo "OK   $1"; else echo "FAIL $1"; fail=1; fi; }
-run() { PATH="$T/bin:$PATH" MTSPI_SETUP_FILE="$T/mtspi.txt" MTSPI_DEFAULTS="$T/defaults" MTSPI_USER=tester MTSPI_P2P_CONF="$T/p2p.conf" MTSPI_SUDOERS="$T/sudoers" MTSPI_NM_STATE="$T/nm.state" bash system/setup-file.sh > "$T/out" 2>&1; }
+run() { PATH="$T/bin:$PATH" MTSPI_SETUP_FILE="$T/mtspi.txt" MTSPI_DEFAULTS="$T/defaults" MTSPI_USER=tester MTSPI_P2P_CONF="$T/p2p.conf" MTSPI_SUDOERS="$T/sudoers" MTSPI_ICON="$T/icon.png" MTSPI_NM_STATE="$T/nm.state" bash system/setup-file.sh > "$T/out" 2>&1; }
 
 # 1. the template as shipped: nothing happens
 cp system/mtspi.txt "$T/mtspi.txt"; : > "$T/calls"; : > "$T/defaults"
@@ -69,17 +69,23 @@ check "Wi-Fi switched on in NetworkManager" 'grep -q "^nmcli radio wifi on" "$T/
 printf '[main]\nNetworkingEnabled=true\nWirelessEnabled=true\n' > "$T/nm.state"; : > "$T/calls"
 run
 check "NetworkManager not asked when Wi-Fi is already on" '! grep -q "^nmcli radio" "$T/calls" && grep -q "^iw reg set IT" "$T/calls"'
-# 8. Siri: switched on once (the two services are restarted without waiting), nothing done when already set,
-#    switched off again, nonsense ignored
+# 8. Siri is on when nothing says otherwise (23 Nov 2026): "on" with no line in the settings changes nothing;
+#    switched off once (the two services are restarted without waiting), nothing done when already set,
+#    switched on again, nonsense ignored
 printf 'CARLINKIT=usb\n' > "$T/defaults"; printf 'SIRI=On\r\n' > "$T/mtspi.txt"; : > "$T/calls"
 run
-check "Siri on: stored, services restarted without waiting" 'grep -qx "HFP_VR=1" "$T/defaults" && grep -qx "CARLINKIT=usb" "$T/defaults" && grep -q "^systemctl --no-block try-restart mtspi-bridge.service mtspi-hfp.service" "$T/calls"'
+check "Siri on when it already is (no line): nothing stored, nothing restarted" '! grep -q HFP_VR "$T/defaults" && ! grep -q "try-restart" "$T/calls"'
+printf 'SIRI=Off\r\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "Siri off: stored, services restarted without waiting" 'grep -qx "HFP_VR=0" "$T/defaults" && grep -qx "CARLINKIT=usb" "$T/defaults" && grep -q "^systemctl --no-block try-restart mtspi-bridge.service mtspi-hfp.service" "$T/calls"'
 : > "$T/calls"
 run
-check "Siri on, second start: nothing restarted" '! grep -q "try-restart" "$T/calls" && [ "$(grep -c HFP_VR "$T/defaults")" = 1 ]'
+check "Siri off, second start: nothing restarted" '! grep -q "try-restart" "$T/calls" && [ "$(grep -c HFP_VR "$T/defaults")" = 1 ]'
+printf 'SIRI=on\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "Siri on again: stored, services restarted" 'grep -qx "HFP_VR=1" "$T/defaults" && [ "$(grep -c HFP_VR "$T/defaults")" = 1 ] && grep -q "try-restart" "$T/calls"'
 printf 'SIRI=off\n' > "$T/mtspi.txt"; : > "$T/calls"
 run
-check "Siri off: stored, services restarted" 'grep -qx "HFP_VR=0" "$T/defaults" && [ "$(grep -c HFP_VR "$T/defaults")" = 1 ] && grep -q "try-restart" "$T/calls"'
 printf 'SIRI=maybe\n' > "$T/mtspi.txt"; : > "$T/calls"
 run
 check "Siri: nonsense ignored" 'grep -qx "HFP_VR=0" "$T/defaults" && ! grep -q "try-restart" "$T/calls"'
@@ -106,4 +112,37 @@ check "TPMS off: stored, listener stopped" 'grep -qx "TPMS=0" "$T/defaults" && g
 printf 'TPMS=perhaps\n' > "$T/mtspi.txt"; : > "$T/calls"
 run
 check "TPMS: nonsense ignored" 'grep -qx "TPMS=0" "$T/defaults" && ! grep -q "mtspi-tpms" "$T/calls"'
+
+# CarPlay icon: the name and the picture chosen in the installer
+printf '\211PNG\r\n\032\n0123456789' > "$T/mtspi-icon.png"; printf 'not a picture' > "$T/fake.png"
+printf 'CARPLAY_NAME=My Bike\r\nCARPLAY_ICON=mtspi-icon.png\r\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "icon name stored, quoted (it may hold a space)" 'grep -qx "OEM_LABEL=\"My Bike\"" "$T/defaults"'
+check "icon picture copied next to the settings" 'cmp -s "$T/mtspi-icon.png" "$T/icon.png"'
+check "icon: the program is restarted once, without waiting" '[ "$(grep -c "^systemctl --no-block try-restart mtspi-bridge.service" "$T/calls")" = 1 ]'
+: > "$T/calls"
+run
+check "icon, second start: nothing copied, nothing restarted" '! grep -q "try-restart" "$T/calls" && [ "$(grep -c "^OEM_LABEL=" "$T/defaults")" = 1 ]'
+printf 'CARPLAY_NAME=a name that is far too long\nCARPLAY_ICON=fake.png\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "icon: a name too long and a file that is not a PNG are ignored" 'grep -qx "OEM_LABEL=\"My Bike\"" "$T/defaults" && cmp -s "$T/mtspi-icon.png" "$T/icon.png" && ! grep -q "try-restart" "$T/calls"'
+printf 'CARPLAY_ICON=../defaults\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "icon: only a file next to mtspi.txt, never a path" 'cmp -s "$T/mtspi-icon.png" "$T/icon.png" && ! grep -q "try-restart" "$T/calls"'
+printf 'CARPLAY_ICON=missing.png\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "icon: a file that is not there leaves the old picture" 'cmp -s "$T/mtspi-icon.png" "$T/icon.png"'
+
+# tyre sensors: codes and recommended pressures
+printf 'TPMS=on\nTPMS_FRONT=00:51:e4\nTPMS_REAR=00:55:26\nTPMS_FRONT_BAR=2.4/2.4\nTPMS_REAR_BAR=2.5/2.9\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "sensor codes stored upper-case" 'grep -qx "TPMS_FRONT=00:51:E4" "$T/defaults" && grep -qx "TPMS_REAR=00:55:26" "$T/defaults"'
+check "recommended pressures stored" 'grep -qx "TPMS_FRONT_BAR=2.4/2.4" "$T/defaults" && grep -qx "TPMS_REAR_BAR=2.5/2.9" "$T/defaults"'
+check "sensors: listener and program restarted once each" '[ "$(grep -c "try-restart mtspi-tpms.service" "$T/calls")" = 1 ] && [ "$(grep -c "try-restart mtspi-bridge.service" "$T/calls")" = 1 ]'
+: > "$T/calls"
+run
+check "sensors, second start: nothing written, nothing restarted" '! grep -q "restart" "$T/calls" && [ "$(grep -c "^TPMS_FRONT=" "$T/defaults")" = 1 ]'
+printf 'TPMS_FRONT=front wheel\nTPMS_REAR_BAR=29\n' > "$T/mtspi.txt"; : > "$T/calls"
+run
+check "sensors: a code or a pressure that makes no sense is ignored" 'grep -qx "TPMS_FRONT=00:51:E4" "$T/defaults" && grep -qx "TPMS_REAR_BAR=2.5/2.9" "$T/defaults" && ! grep -q "restart" "$T/calls"'
 [ "$fail" = 0 ] && echo "ALL OK" || { echo "SOME FAILED"; cat "$T/out"; exit 1; }

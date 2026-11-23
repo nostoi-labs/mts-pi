@@ -81,11 +81,13 @@ chroot "$ROOT" /bin/bash -c "lsinitramfs /boot/firmware/initramfs8 | grep -c -E 
 
 echo "== self-tests of the settings-file and protection scripts inside the image"
 chroot "$ROOT" /bin/bash -c "cd /opt/mts-pi && bash tests/test_setup_file.sh && bash tests/test_protect.sh"
+# the update from a file, on the image's own file system (the one the folders will change places on)
+chroot "$ROOT" /bin/bash -c "cd /opt/mts-pi && python3 tests/test_update.py > /tmp/test_update.log 2>&1 || { tail -40 /tmp/test_update.log; exit 1; }; grep -c '^ok ' /tmp/test_update.log"
 
 echo "== what the image contains"
 chroot "$ROOT" /bin/bash -c "id mtspi; systemctl is-enabled ofono mtspi-adapters mtspi-hfp mtspi-wifi-mode mtspi-btcentral mtspi-bridge | tr '\n' ' '; echo; ls /var/lib/systemd/linger; cat /etc/default/mtspi; cd /opt/mts-pi && .venv/bin/python -c 'import mtspi.bridge, mtspi.hfp_ag, myspin.phone; print(\"program loads:\", myspin.phone.__file__)'; ls -l /boot/firmware/mtspi.txt; cat /etc/hostname; df -h / | tail -1; systemctl is-enabled mtspi-firstboot userconfig cron 2>&1 | tr '\n' ' '; echo; grep -E '^(gpu_mem|boot_delay|dtparam=audio|#dtoverlay=vc4)' /boot/firmware/config.txt | tr '\n' ' '; echo; cat /etc/modprobe.d/mtspi-lean.conf | tr '\n' ' '; echo"
 
-chroot "$ROOT" /bin/bash -c "systemctl is-enabled mtspi-data-check mtspi-logs mtspi-btstore-load mtspi-btstore mtspi-clock-load mtspi-clock-save.path mtspi-protect mtspi-tpms | tr '\n' ' '; echo; cat /etc/fstab; ls -la /data"
+chroot "$ROOT" /bin/bash -c "systemctl is-enabled mtspi-data-check mtspi-logs mtspi-btstore-load mtspi-btstore mtspi-clock-load mtspi-clock-save.path mtspi-protect mtspi-update mtspi-tpms | tr '\n' ' '; echo; cat /etc/fstab; ls -la /data"
 parted -s "$LOOP" unit MiB print
 
 echo "== clean up"
@@ -101,3 +103,7 @@ cleanup; trap - EXIT
 echo "== compress"
 xz -T0 -6 -c "$IMG" > "$OUT/mts-pi-$VERSION.img.xz"
 (cd "$OUT" && sha256sum "mts-pi-$VERSION.img.xz" > "mts-pi-$VERSION.img.xz.sha256" && ls -lh "mts-pi-$VERSION.img.xz" && cat "mts-pi-$VERSION.img.xz.sha256")
+
+echo "== the same version as an update, for the cards that already run MTS Pi (system/update.py)"
+python3 system/update.py pack . "$VERSION" "$OUT/mts-pi-update-$VERSION.tar.gz"
+(cd "$OUT" && sha256sum "mts-pi-update-$VERSION.tar.gz" > "mts-pi-update-$VERSION.tar.gz.sha256" && ls -lh "mts-pi-update-$VERSION.tar.gz")

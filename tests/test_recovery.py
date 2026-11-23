@@ -438,6 +438,204 @@ def test_unknown_voice_link_restarts_the_pi_but_not_during_a_call():
         assert acted == ["reboot", "bounce", "reboot"]
 
 
+# ------------------------------------------------------------ faults that are something lasting too long (22 Nov 2026)
+
+GARBLED = "3,5120,7411000000,-;Bluetooth: hci0: Frame reassembly failed (-84)"
+
+
+def test_a_burst_of_broken_frames_is_noted_once_and_a_few_are_nothing():
+    now = Clock()
+    w = recovery.RadioWatch(now=now)
+    for _ in range(5):                                   # a handful, as after any hiccup
+        assert w.feed(GARBLED) is None
+        now.t += 3
+    now.t += 60
+    seen = []
+    for _ in range(539):                                 # the burst of the night bench: 539 lines in under a second
+        seen.append(w.feed(GARBLED))
+        now.t += 0.001
+    assert seen.count("garbled") == 1 and seen[recovery.GARBLED_COUNT - 1] == "garbled"
+    assert w.feed(STUCK) is None                         # and they are not counted as an unanswering radio
+    now.t += 60                                          # a second burst, a minute later, is said again
+    assert [w.feed(GARBLED) for _ in range(40)].count("garbled") == 1
+
+
+def test_lasting_says_so_at_the_limit_and_again_every_limit_while_it_lasts():
+    now = Clock()
+    x = recovery.Lasting(60, now=now)
+    said = []
+    for second in range(200):
+        now.t += 1
+        if x.feed(True):
+            said.append(second + 1)
+    assert said == [61, 121, 181] and x.times == 3
+    assert x.feed(False) is False and x.times == 0       # a break: the count starts again from nothing
+    now.t += 59
+    assert x.feed(True) is False
+    now.t += 59
+    assert x.feed(True) is False
+    now.t += 2
+    assert x.feed(True) is True
+
+
+def test_a_missing_carlinkit_restarts_the_pi_once_until_it_is_seen_again():
+    with tempfile.TemporaryDirectory() as tmp:
+        rec, logs, cmds, now, wall = make(tmp)
+        assert not rec.carlinkit_tried()
+        assert rec.reboot("the Carlinkit is not on the USB port", key="carlinkit")
+        assert rec.carlinkit_tried()                     # it did not come back with a restart: nobody tries again
+        rec.carlinkit_seen()                             # ... until it has been there once
+        assert not rec.carlinkit_tried()
+        lines = [json.loads(x) for x in open(os.path.join(tmp, "recovery.log")).read().splitlines()]
+        assert [x["what"] for x in lines] == ["reboot", "carlinkit_seen"] and lines[0]["key"] == "carlinkit"
+        rec.carlinkit_seen()                             # seen at every start: no line more, nothing written to the card
+        assert len(open(os.path.join(tmp, "recovery.log")).read().splitlines()) == 2
+        wall.t += 3600
+        assert rec.reboot("the Bluetooth radio no longer answers")          # another reason is another matter
+        assert not rec.carlinkit_tried()
+
+
+def _slow_guard(tmp, limits, ticks, **state):
+    """Runs the bridge's guard for a few of its turns, with the three limits given and a stand-in bridge."""
+    import asyncio
+    rec, _, cmds, _, _ = make(tmp)
+    bridge, me, logs, acted = _bridge_with(rec)
+    me.a.carlinkit = state.pop("carlinkit", "usb")
+    for name, value in state.items():
+        setattr(me, name, value)
+    unstuck = []
+
+    async def carplay_unstick(times):
+        unstuck.append(times)
+    me.carplay_unstick = carplay_unstick
+    me.carplay_waiting = lambda: bridge.Bridge.carplay_waiting(me)
+    real_sleep, saved = asyncio.sleep, bridge.asyncio.sleep
+    saved_limits = (recovery.BT_OFF_S, recovery.NO_CARLINKIT_S, recovery.CONNECTING_S)
+    recovery.BT_OFF_S, recovery.NO_CARLINKIT_S, recovery.CONNECTING_S = limits
+    turns = []
+
+    async def fast_sleep(s, *a):
+        turns.append(1)
+        if len(turns) > ticks:
+            raise asyncio.CancelledError
+        await real_sleep(0.02)
+
+    async def run():
+        try:
+            await bridge.Bridge.slow_guard(me)
+        except asyncio.CancelledError:
+            pass
+    bridge.asyncio.sleep = fast_sleep
+    try:
+        asyncio.run(run())
+    finally:
+        bridge.asyncio.sleep = saved
+        recovery.BT_OFF_S, recovery.NO_CARLINKIT_S, recovery.CONNECTING_S = saved_limits
+    return rec, logs, acted, cmds, unstuck
+
+
+def _radio(answer):
+    async def radio_powered():
+        return answer
+    return radio_powered
+
+
+def test_bluetooth_that_stays_switched_off_restarts_the_pi_and_no_answer_does_not():
+    with tempfile.TemporaryDirectory() as tmp:
+        connected = types.SimpleNamespace(state="connected")
+        for answer, expected in ((False, ["reboot"]), (True, []), (None, [])):
+            _, logs, acted, _, _ = _slow_guard(tmp, (0.05, 999, 999), 9, radio_powered=_radio(answer), dongle=connected,
+                                               carplay_state=lambda: "on")
+            assert acted[:1] == expected, (answer, acted)
+            assert bool([e for e, _ in logs if e == "radio_off"]) == bool(expected)
+
+
+def test_the_carlinkit_gone_from_usb_restarts_the_pi_once():
+    with tempfile.TemporaryDirectory() as tmp:
+        state = dict(radio_powered=_radio(True), dongle=None, carplay_state=lambda: "off")
+        rec, logs, _, cmds, _ = _slow_guard(tmp, (999, 0.05, 999), 6, **state)
+        assert [c for c in cmds if c[-1] == "reboot"] and rec.carlinkit_tried()
+        # the start after that restart: still not there -> said once, no second restart
+        rec2, logs2, _, cmds2, _ = _slow_guard(tmp, (999, 0.05, 999), 12, **state)
+        assert not [c for c in cmds2 if c[-1] == "reboot"]
+        assert len([kw for e, kw in logs2 if e == "carlinkit_absent" and "note" in kw]) == 1
+        # nothing at all during a call, or when the card is set up without the Carlinkit
+        for extra in (dict(call={"state": "active"}), dict(carlinkit="none")):
+            with tempfile.TemporaryDirectory() as other:
+                _, logs3, _, cmds3, _ = _slow_guard(other, (999, 0.05, 999), 6, **dict(state, **extra))
+                assert not cmds3 and not [e for e, _ in logs3 if e == "carlinkit_absent"]
+
+
+def test_carplay_left_on_connecting_is_helped_only_with_the_iphone_in_reach():
+    with tempfile.TemporaryDirectory() as tmp:
+        opening = types.SimpleNamespace(state="opening")
+        phone = types.SimpleNamespace(bike={"mac": "AA:BB:CC:DD:EE:FF"}, iphone={"mac": "AA:BB:CC:00:11:22"})
+        no_phone = types.SimpleNamespace(bike={"mac": "AA:BB:CC:DD:EE:FF"}, iphone=None)
+        cases = ((dict(bt=phone), True), (dict(bt=no_phone), False), (dict(bt=phone, call={"state": "active"}), False))
+        for extra, helped in cases:
+            state = dict(radio_powered=_radio(True), dongle=opening, carplay_state=lambda: "connecting")
+            state.update(extra)
+            _, _, _, cmds, unstuck = _slow_guard(tmp, (999, 999, 0.05), 12, **state)
+            assert (unstuck[:2] == [1, 2]) == helped, (extra.keys(), unstuck)
+            assert not cmds                               # never the Pi's restart for this
+
+
+def test_carplay_stuck_the_session_is_opened_again_and_nothing_harsher_is_done():
+    """Restarting the program is not done: "connecting" for minutes is also what a locked phone in a pocket looks like."""
+    import asyncio
+    with tempfile.TemporaryDirectory() as tmp:
+        rec, _, cmds, _, _ = make(tmp)
+        bridge, me, logs, _ = _bridge_with(rec)
+        sent, killed, asked = [], [], []
+
+        async def stop():
+            sent.append("stop")
+        me.dongle = types.SimpleNamespace(stop=stop)
+        me.request_carplay = lambda: asked.append(1)
+        real_sleep, saved_sleep, saved_kill = asyncio.sleep, bridge.asyncio.sleep, bridge.os.kill
+
+        async def fast_sleep(s, *a):
+            await real_sleep(0)
+        bridge.asyncio.sleep, bridge.os.kill = fast_sleep, lambda pid, sig: killed.append(sig)
+        try:
+            for times in (1, 2, 3, 4):
+                asyncio.run(bridge.Bridge.carplay_unstick(me, times))
+            assert sent == ["stop"] and asked == [1]                # closed and asked again, once
+            assert not killed and not cmds                          # never the program, never the Pi
+            assert [kw["step"] for e, kw in logs if e == "carplay_stuck"] == ["session opened again", "left alone"]
+        finally:
+            bridge.asyncio.sleep, bridge.os.kill = saved_sleep, saved_kill
+
+
+def test_a_restart_meant_to_happen_once_is_not_made_when_once_cannot_be_remembered():
+    """No Carlinkit plugged in is not a fault. If the record of the one restart would be lost, the Pi would restart
+    every few minutes for as long as the Carlinkit is missing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        # the record cannot be written at all (card full, data partition read-only)
+        rec, logs, cmds, _, _ = make(os.path.join(tmp, "no-such-folder"))
+        assert rec.reboot("the Carlinkit is not on the USB port", key="carlinkit") is False and cmds == []
+        assert rec.reboot("the Bluetooth radio no longer answers") is True          # a dead radio restarts all the same
+        # the record can be written, but on the layer in memory of a protected card: gone at the restart
+        rec, logs, cmds, _, _ = make(tmp)
+        mounts = os.path.join(tmp, "mounts")
+        open(mounts, "w").write("overlayroot / overlay rw,relatime 0 0\n/dev/mmcblk0p3 /data ext4 rw 0 0\n")
+        real = os.stat
+        try:
+            recovery.os.stat = lambda p, *a, **k: types.SimpleNamespace(st_dev=7)       # the folder is on the same device as /
+            assert rec.record_kept(mounts) is False
+            recovery.os.stat = lambda p, *a, **k: types.SimpleNamespace(st_dev=7 if p == "/" else 9)   # on the data partition
+            assert rec.record_kept(mounts) is True
+        finally:
+            recovery.os.stat = real
+        open(mounts, "w").write("/dev/mmcblk0p2 / ext4 rw,noatime 0 0\n")              # a card that is not protected: all of it is kept
+        assert rec.record_kept(mounts) is True
+        rec.record_kept = lambda mounts=None: False
+        assert rec.reboot("the Carlinkit is not on the USB port", key="carlinkit") is False and cmds == []
+        assert not os.path.exists(os.path.join(tmp, "recovery.log"))        # and no line for a restart that was not made:
+        assert not rec.carlinkit_tried() and rec.last_reboot() is None      # it would have held back every other restart
+        assert [kw["because"] for e, kw in logs if e == "recovery_reboot_skipped"] == ["the record would not survive the restart"]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

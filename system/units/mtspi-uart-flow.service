@@ -1,0 +1,16 @@
+[Unit]
+Description=MTS Pi: flow control on the small serial port, when Bluetooth uses it (see system/uart-flow.py)
+After=bluetooth.service
+# it ends by itself where there is nothing to do (not a Pi 3) and is not started again; after an error it is tried
+# a few more times and then left as failed, instead of starting every few seconds for ever
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+# root: the register is reached through /dev/mem. Does nothing unless Bluetooth is on the mini UART of a Pi 3.
+ExecStart=/usr/bin/python3 @REPO@/system/uart-flow.py
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

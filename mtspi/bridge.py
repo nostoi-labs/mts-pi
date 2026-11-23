@@ -45,9 +45,11 @@ from mtspi.tasks import spawn
 from mtspi import alive  # noqa: E402
 from mtspi import recovery  # noqa: E402
 
-# Siri from the helmet (the joystick held down, the bike's phone button): works on the bench since 17 Nov 2026, not yet
-# tried on the bike, so it is off unless HFP_VR=1 (the same switch that lets the hands-free open the voice without a call).
-SIRI_ENABLED = os.environ.get("HFP_VR", "0") == "1"
+# Siri from the helmet (the joystick held down, the bike's phone button): on the bike since 21 Nov 2026. It was off
+# unless asked for while an open voice link could stop the radio chip; with Bluetooth on the mini UART (3,671
+# openings in one night without a fault, 22-23 Nov 2026) it is on unless HFP_VR=0. The same switch lets the hands-free
+# open the voice without a call.
+SIRI_ENABLED = os.environ.get("HFP_VR", "1") == "1"
 # SIRI_WAIT_MIC=1: the command goes to CarPlay only when the helmet microphone is open. Off by default: on the bike
 # (21 Nov 2026) Siri was started at once and it worked, because the bike plays a tone in the helmet when it has
 # connected it, and that is when the rider speaks. The wait has been tried on the bench only.
@@ -75,6 +77,16 @@ def oem_icon_png(label: str, path: str = "") -> bytes:
     img.save(buf, "PNG")
     return buf.getvalue()
 
+
+
+def cpu_temp(path="/sys/class/thermal/thermal_zone0/temp"):
+    """{"temp": degrees} for the log line written every 5 s, {} where the processor has no sensor (the bench Mac).
+    In the log because a radio problem on a hot day is only understood with the temperature next to it."""
+    try:
+        with open(path) as f:
+            return {"temp": round(int(f.read()) / 1000)}
+    except (OSError, ValueError):
+        return {}
 
 class Display:
     """What the bike sees over mySPIN: the Pi menu or CarPlay."""
@@ -298,10 +310,47 @@ class Bridge:
         self.log("settings", **self.settings.__dict__)
 
     def save_settings(self):
+        """Called when the settings page is left: only then is a new number of pictures a second given to CarPlay
+        (it costs a CarPlay restart, not something to do at every press of the joystick)."""
         try:
             self.settings.save(self.settings_path)
         except OSError as e:
             self.log("settings_save_error", error=str(e))
+        if self.dongle and self.dongle.fps != self.carplay_fps():
+            self.spawn(self.carplay_new_fps())
+
+    def fps_fixed(self):
+        """Pictures a second fixed from outside (CARPLAY_FPS in /etc/default/mtspi): the settings page then has no
+        row for them. None = the choice made in the settings page."""
+        return self.a.fps
+
+    def carplay_fps(self):
+        return self.a.fps or self.settings.carplay_fps
+
+    async def carplay_new_fps(self):
+        """The Carlinkit learns how many pictures a second to ask for from the Open message, and only there. A new
+        Open with a different number on a session that is alive makes it drop the phone a few seconds later: on the
+        bench of 23 Nov 2026 the phone came back by itself twice, and once CarPlay stayed "connecting" for six
+        minutes. Closed first, left alone for five seconds, then opened: back in five seconds, every time. So the
+        session is closed here, and opened again only if CarPlay was on; the dashboard stays on the page it is on."""
+        d, fps = self.dongle, self.carplay_fps()
+        if not d or d.fps == fps:
+            return
+        was = self.carplay_state()
+        d.fps = fps
+        self.log("carplay_fps", fps=fps, carplay=was)
+        if was == "off":
+            return                                  # the next Open carries the new number
+        try:
+            await d.stop()
+            await asyncio.sleep(5)
+            if self.dongle is d and self.carplay_state() == "off" and not self.carplay_user_off:
+                self.carplay_since = time.monotonic()
+                d.state = "opening"
+                await d.start()
+                self.log("carplay_fps", fps=fps, step="session opened again")
+        except (ConnectionError, OSError) as e:
+            self.log("carplay_fps", fps=fps, step="failed", error=str(e)[:80])
 
     # ------------------------------------------------------------ CarPlay on demand
     def request_carplay(self):
@@ -354,6 +403,13 @@ class Bridge:
                     setattr(self, "call_fps_live" if k == "callfps" else "music_fps", int(v))
                     self.log("manual_fps", **{k: int(v)})
                     continue
+                if w.startswith("cpfps="):            # what the settings page does, without a dashboard: "cpfps=30"
+                    from mtspi.settings import FPS_CHOICES
+                    if int(w[6:]) in FPS_CHOICES:
+                        self.settings.carplay_fps = int(w[6:])
+                        self.log("manual_cpfps", fps=self.settings.carplay_fps)
+                        self.save_settings()
+                    continue
                 if w.startswith("jpegq=") and self.session:   # live JPEG quality (2.4 GHz tests): "jpegq=60"
                     self.session.jpeg_quality = int(w[6:])
                     self.log("manual_jpeg", q=self.session.jpeg_quality)
@@ -387,10 +443,12 @@ class Bridge:
                 host, port = self.a.carlinkit.rsplit(":", 1)
                 link = await lp.connect(host, int(port), "carlinkit-usb", retry_s=3600)
             w, h = (int(x) for x in self.a.screen.lower().split("x"))
-            self.dongle = ck.CarlinkitHost(link.reader, link.writer, self.log, w, h, self.a.fps,
+            self.dongle = ck.CarlinkitHost(link.reader, link.writer, self.log, w, h, self.carplay_fps(),
                                            audio_transfer=self.a.audio_transfer, on_message=self.from_dongle,
                                            oem_label=self.a.oem_label, oem_icon_png=oem_icon_png(self.a.oem_label, self.a.oem_icon))
             self.log("carlinkit_usb_connected", note="dongle powered but closed: CarPlay on demand only")
+            if self.recovery:
+                await asyncio.get_running_loop().run_in_executor(None, self.recovery.carlinkit_seen)
             try:
                 await self.dongle.configure_icon()
                 if self.a.carplay_auto or self.settings.carplay_autostart:
@@ -401,6 +459,7 @@ class Bridge:
                 # (bad headers after a bridge restart: read_message skips them)
                 self.log("carlinkit_lost", error=f"{type(e).__name__}: {e}")
             self.dongle = None
+            self.carplay_gone("carlinkit_lost")
             self.display.mode = "launcher"
             await asyncio.sleep(1)
 
@@ -464,6 +523,12 @@ class Bridge:
                 # from the audio commands. 14 = ringing, phonecall_start = active (outgoing too), phonecall_stop = ended
                 ev = None
                 cp_call = self.call if self.call and self.call.get("src") == "carplay" else None
+                if cmd == "incoming_call" and cp_call and cp_call.get("orphan") and cp_call.get("state") != "incoming":
+                    # CarPlay is back with a NEW call ringing, while a call that had lost CarPlay is still shown:
+                    # that one is over (it was kept only for lack of the phone's word)
+                    cp_call.pop("orphan", None)
+                    await self.carplay_call_end("a new call rings")
+                    cp_call = None
                 if cmd == "incoming_call" and not cp_call:
                     ev = "ring"
                 elif cmd == "phonecall_start" and cp_call and cp_call.get("ending"):
@@ -493,6 +558,8 @@ class Bridge:
                         self.call["src"] = "carplay"
                 if cmd == "phonecall_start" and self.call:
                     self.call["audio"] = "carplay"
+                if cmd in ("phonecall_start", "incoming_call") and self.call and self.call.pop("orphan", None):
+                    self.log("carplay_call_back_on_carplay")      # CarPlay had gone during this call: it is back
                 return
             pcm = au.get("pcm") or b""
             rate, ch = ck.DECODE_TYPES.get(au["decode_type"], (44100, 2))
@@ -548,6 +615,7 @@ class Bridge:
                      connect_s=round(time.monotonic() - (self.carplay_since or time.monotonic()), 1))
         elif mtype == ck.UNPLUGGED:
             self.log("carlinkit_unplugged")
+            self.carplay_gone("unplugged")
             self.display.mode = "launcher"
             self.to_bike({"type": "bench_display", "mode": "launcher"})
             self.display.carplay_frame = None
@@ -711,6 +779,8 @@ class Bridge:
                                 "cind": {"call": 0, "callsetup": 1}})
         if self.call:
             self.call["src"] = "carplay"
+            if not self.dongle or self.carplay_state() != "on":
+                self.carplay_gone("gone while the number was being looked up")
 
     CALL_GAP_S = 2.5     # phonecall_stop during an active CarPlay call: how long to wait for a phonecall_start (audio moved)
 
@@ -719,8 +789,50 @@ class Bridge:
         Until then the call continues as far as the bike is concerned (no music, video limit, microphone paused).
         The iPhone's oFono state does not help shorten this: during the move it also reports [] and then ["active"]."""
         await asyncio.sleep(self.CALL_GAP_S)
-        if self.call is c and c.get("ending"):
+        if self.call is c and c.get("ending") and not c.get("orphan"):   # without CarPlay the phone decides (carplay_orphan)
             await self.carplay_call_end("timeout")
+
+    ORPHAN_QUIET_S = 6     # the phone itself must report no call for this long (it reports none for a moment when the audio moves)
+    ORPHAN_MAX_S = 45      # with no word from the phone (not connected over Bluetooth): how long such a call is kept
+
+    def carplay_gone(self, why):
+        """CarPlay has gone (the phone left it, or the Carlinkit was lost) while a call or Siri was open through it.
+        Siri exists only through CarPlay: it is closed at once. A call does not: CarPlay often comes back within
+        seconds and the call goes on (ended here, it could not be picked up again: no sound in the helmet for the rest
+        of it). So the call is kept, and the question "is it still going on?" is put to the phone itself, over
+        Bluetooth: when the phone has reported no call for a few seconds, the call is closed for the bike too. Before
+        23 Nov 2026 nothing closed it: the bike stayed "in a call" until the key was turned.
+        Nothing here waits for anything: it is called from the loop that reopens the Carlinkit."""
+        if self.siri_until:
+            self.log("siri_dropped", why=why)
+            self.siri_set(False)
+        c = self.call
+        if c and c.get("src") == "carplay" and not c.get("orphan"):
+            c["orphan"] = time.monotonic()
+            c.pop("ending", None)                   # the Carlinkit's "call audio stopped" came with CarPlay going away
+            self.log("carplay_call_without_carplay", why=why, state=c.get("state"))
+            self.spawn(self.carplay_orphan(c))
+
+    async def carplay_orphan(self, c):
+        quiet = None
+        while self.call is c and c.get("orphan"):
+            await asyncio.sleep(1)
+            if self.call is not c or not c.get("orphan"):
+                return                              # ended by another path, or CarPlay came back with the call
+            now, bt = time.monotonic(), self.bt
+            if bt and bt.iphone and getattr(bt, "calls_known", False):   # the phone is here and its last answer about calls arrived
+                quiet = (quiet or now) if bt.call is None else None
+                if quiet is None or now - quiet < self.ORPHAN_QUIET_S:
+                    continue
+                why = "CarPlay gone and the phone reports no call"
+            elif now - c["orphan"] < self.ORPHAN_MAX_S:
+                continue
+            else:
+                why = "CarPlay gone and no word from the phone"
+            c.pop("ending", None)
+            c.pop("orphan", None)
+            await self.carplay_call_end(why)
+            return
 
     async def carplay_call_end(self, why):
         c = self.call
@@ -782,6 +894,10 @@ class Bridge:
     # ------------------------------------------------------------ CarPlay Siri
     SIRI_START_S = 6     # after the command: if the Carlinkit does not say siri_start within this time, close again
     SIRI_MAX_S = 120     # maximum duration without siri_stop (safeguard: the voice channel does not stay open forever)
+
+    def voice_open(self):
+        """True while the voice channel to the bike is, or is about to be, open: a call in any state, or Siri."""
+        return bool(self.call) or bool(self.siri_until)
 
     def siri_set(self, on, max_s=0):
         """Siri state towards the bike: on siri_start the hands-free opens the voice channel without a call, on siri_stop it closes it."""
@@ -928,6 +1044,7 @@ class Bridge:
             if self.recovery:
                 self.spawn(self.mirror_guard())
                 self.spawn(self.radio_watch())
+                self.spawn(self.slow_guard())
         while True:
             try:
                 ep = await discover_vehicle(self.log, self.a.discovery_port, timeout=3600)
@@ -1097,6 +1214,9 @@ class Bridge:
                 await self.recover("reboot", why="the Bluetooth radio no longer answers")
             elif what == "ghost":
                 await self.voice_ghost()
+            elif what == "garbled":
+                self.log("radio_line_garbled", kernel=line.split(";", 1)[-1].strip()[:80],
+                         voice_open=self.voice_open())
 
     async def voice_ghost(self):
         """The chip carries a voice link the system does not know (bench, 22 Nov 2026: from then on the voice channel
@@ -1143,6 +1263,54 @@ class Bridge:
                     await self.recover("reboot", why="Bluetooth did not come back after the radio chip restarted itself")
         finally:
             checking.clear()
+
+    def carplay_waiting(self):
+        """CarPlay is being opened, the iPhone is here (connected over Bluetooth) and no call is going on."""
+        return bool(self.dongle and self.carplay_state() == "connecting" and self.bt and self.bt.iphone and not self.call)
+
+    async def slow_guard(self):
+        """The faults that are not an error but something that lasts too long (mtspi/recovery.py, bench of 22 Nov 2026)."""
+        rec, loop = self.recovery, asyncio.get_running_loop()
+        bt_off = recovery.Lasting(recovery.BT_OFF_S)
+        no_dongle = recovery.Lasting(recovery.NO_CARLINKIT_S)
+        connecting = recovery.Lasting(recovery.CONNECTING_S)
+        usb, tick, absent_noted = self.a.carlinkit == "usb", 0, False
+        while True:
+            await asyncio.sleep(5)
+            tick += 1
+            # Bluetooth switched off: asked every 15 s (it costs a connection to the system bus each time)
+            if tick % 3 == 0 and bt_off.feed(await self.radio_powered() is False):
+                self.log("radio_off", for_s=recovery.BT_OFF_S * bt_off.times)
+                await self.recover("reboot", why="Bluetooth is switched off and does not come back")
+            if not usb:
+                continue
+            if no_dongle.feed(self.dongle is None and not self.call):
+                if await loop.run_in_executor(None, rec.carlinkit_tried):
+                    if not absent_noted:
+                        absent_noted = True
+                        self.log("carlinkit_absent", note="the Pi already restarted once for this: left alone until it is seen again")
+                else:
+                    self.log("carlinkit_absent", for_s=recovery.NO_CARLINKIT_S * no_dongle.times)
+                    await loop.run_in_executor(None, lambda: rec.reboot("the Carlinkit is not on the USB port", key="carlinkit"))
+            if connecting.feed(self.carplay_waiting()):
+                await self.carplay_unstick(connecting.times)
+
+    async def carplay_unstick(self, times):
+        """CarPlay has been "connecting" for a minute and a half (times = 1), three minutes (2), and so on."""
+        if times == 1:
+            self.log("carplay_stuck", step="session opened again")
+            try:
+                await self.dongle.stop()
+                await asyncio.sleep(2)
+                self.request_carplay()
+            except (ConnectionError, OSError) as e:
+                self.log("carplay_stuck", step="failed", error=str(e)[:80])
+        elif times == 2:
+            # Restarting the program brought CarPlay back twice on the bench, with the phone far away; but the same
+            # state is an ordinary one too (CarPlay switched off for this "car" on the phone, a locked phone in a
+            # pocket), and there a restart at every power-on would drop the dashboard for nothing. Not done until
+            # the fault has been seen again and told apart.
+            self.log("carplay_stuck", step="left alone")
 
     async def carplay_idle_off(self):
         """After leaving Ducati Connect: turns CarPlay off after a while, so the audio goes back to Bluetooth."""
@@ -1311,7 +1479,8 @@ class Bridge:
             jpeg = {"kb_frame": round(sess.bytes_sent / sess.frames_sent / 1024, 1), "bytes": sess.bytes_sent, "q": sess.jpeg_quality} \
                 if sess and getattr(sess, "frames_sent", 0) else {}
             self.log("bridge_stats", display=self.display.mode, carplay=self.carplay_state(),
-                     audio_source=self.audio_source(), frames_sent=self.display.frames_sent, **jpeg, **self.counts)
+                     audio_source=self.audio_source(), frames_sent=self.display.frames_sent, **jpeg, **self.counts,
+                     **cpu_temp())
 
     async def main(self):
         # "none" = peripheral absent (garage: no emulated iPhone or Carlinkit, dashboard only)
@@ -1423,8 +1592,11 @@ class Bridge:
                 await self.media_to_bike()
             if st.iphone and pulled_for != st.iphone["mac"]:
                 pulled_for = st.iphone["mac"]
-                self.spawn(self.pull_contacts(st.iphone["mac"], st.iphone.get("adapter")))
-                self.spawn(self.pull_sms(st.iphone["mac"], st.iphone.get("adapter")))
+                # one pair of downloads per connection: the pair of the connection before stops when it sees the
+                # number has changed (it used to go on when the same phone came back, two downloads at once)
+                self.phone_turn = getattr(self, "phone_turn", 0) + 1
+                self.spawn(self.pull_contacts(st.iphone["mac"], st.iphone.get("adapter"), self.phone_turn))
+                self.spawn(self.pull_sms(st.iphone["mac"], st.iphone.get("adapter"), self.phone_turn))
                 if os.environ.get("PHONE_TIME", "1") != "0":
                     self.spawn(self.phone_time(st.iphone["mac"]))
             if not st.iphone:
@@ -1485,13 +1657,28 @@ class Bridge:
                 self.log("agent_error", error=f"{type(e).__name__}: {e}")
                 await asyncio.sleep(10)
 
-    async def pull_sms(self, mac, adapter=None):
+    def phone_still(self, mac, turn=None):
+        """True while the iPhone of this download is connected, and it is still the same connection."""
+        return bool(self.bt and self.bt.iphone and self.bt.iphone.get("mac") == mac
+                    and (turn is None or turn == getattr(self, "phone_turn", turn)))
+
+    async def pull_sms(self, mac, adapter=None, turn=None):
         """Messages from the iPhone (MAP). Without "Show Message Notifications" the iPhone answers Forbidden (0x43): retry slowly.
         Then re-read on every new message (MNS) and in any case every 5 minutes."""
         from mtspi import mns
         wait = 10
-        while self.bt and self.bt.iphone and self.bt.iphone.get("mac") == mac:
+        while self.phone_still(mac, turn):
             try:
+                # like the phonebook: nothing is downloaded from the iPhone while a call or Siri is open. The message
+                # list arriving on top of the voice broke the serial line once on the night bench of 22 Nov 2026
+                # (539 "Frame reassembly failed" at the very moment of map_pulled). The messages can wait.
+                t1 = time.monotonic()
+                while self.voice_open() and time.monotonic() - t1 < 900 and self.phone_still(mac, turn):
+                    await asyncio.sleep(1)
+                if time.monotonic() - t1 >= 1:
+                    self.log("map_waited_for_voice", waited_s=round(time.monotonic() - t1))
+                    await asyncio.sleep(1)
+                    continue                           # look again: the phone may have gone, or the voice opened again
                 msgs = await mns.pull_messages(mac, self.log, source=adapter)
                 for m in msgs:                        # the iPhone often gives only the number: name from the phonebook
                     if m.get("from") == m.get("number") or str(m.get("from", "")).startswith("+"):
@@ -1525,7 +1712,25 @@ class Bridge:
             if done:
                 return
 
-    async def pull_contacts(self, mac, adapter=None):
+    VOICE_QUIET_S = 3    # the voice link must have been closed this long before a dropped download starts again
+
+    async def voice_quiet(self, mac, turn, limit_s=900):
+        """Waits until no voice link has been open for VOICE_QUIET_S in a row (Siri closes and opens again within a
+        second or two). False if the phone left in the meantime."""
+        t0, closed = time.monotonic(), None
+        while time.monotonic() - t0 < limit_s:
+            if not self.phone_still(mac, turn):
+                return False
+            if self.voice_open():
+                closed = None
+            else:
+                closed = closed or time.monotonic()
+                if time.monotonic() - closed >= self.VOICE_QUIET_S:
+                    break
+            await asyncio.sleep(0.5)
+        return self.phone_still(mac, turn)
+
+    async def pull_contacts(self, mac, adapter=None, turn=None):
         # Right after connecting obexd may not be ready, and without "Sync Contacts" the iPhone answers with 0 entries:
         # retry until the phonebook arrives (then every 5 minutes, for anyone who grants the permission later).
         # With the phonebook already on the SD card, the download (~15 s of saturated radio: stuttering helmet music, 29 Oct 2026)
@@ -1534,12 +1739,28 @@ class Bridge:
             t0 = time.monotonic()
             while time.monotonic() - t0 < 900 and (self.call or time.monotonic() - max(self.audio_src.values()) < 5):
                 await asyncio.sleep(5)
-                if not self.bt or not self.bt.iphone or self.bt.iphone.get("mac") != mac:
+                if not self.phone_still(mac, turn):
                     return
             self.log("pbap_pull_start", waited_s=round(time.monotonic() - t0))
-        for wait in (5, 15, 30, 60, 300, 300, 300, 300):
+        # Never while a voice link is open (a call, or Siri, which is not a call and pauses the music: the wait above let
+        # the download start in the middle of it). With Bluetooth on the mini UART the phonebook arriving on top of the
+        # voice fills the serial line and the radio chip sends broken frames ("Frame reassembly failed", then music and the
+        # phone's link are lost): seen three times on the bench on 22 Nov 2026. Also for the very first download.
+        t1 = time.monotonic()
+        while time.monotonic() - t1 < 900 and self.voice_open():
+            await asyncio.sleep(2)
+            if not self.phone_still(mac, turn):
+                return
+        if time.monotonic() - t1 >= 2:
+            self.log("pbap_waited_for_voice", waited_s=round(time.monotonic() - t1))
+        aborted = 0
+        waits = [5, 15, 30, 60, 300, 300, 300, 300]
+        while waits:
+            wait = waits.pop(0)
             try:
-                books = await bluez.pull_phonebook(mac, self.log, source=adapter)
+                # ... and if a call or Siri starts while it is coming in, the download is dropped at once and tried
+                # again when the voice link has been closed for a while (up to 6 times, then with the usual waits)
+                books = await bluez.pull_phonebook(mac, self.log, source=adapter, abort=self.voice_open)
                 self.contacts = bluez.parse_vcards(books.get("pb", ""))
                 self.recent = bluez.parse_vcards(books.get("cch", ""), limit=50)
                 if self.contacts:
@@ -1553,11 +1774,20 @@ class Bridge:
                             self.log("phonebook_save_error", error=str(e))
                     return
                 self.log("pbap_empty", retry_in=wait)
+            except bluez.PullAborted as e:
+                aborted += 1
+                self.log("pbap_aborted_for_voice", folder=str(e), times=aborted)
+                if aborted <= 6:
+                    waits.insert(0, wait)               # this try does not count
+                if not await self.voice_quiet(mac, turn):
+                    return
+                continue
             except Exception as e:
                 self.log("pbap_error", error=f"{type(e).__name__}: {e}", retry_in=wait)
             await asyncio.sleep(wait)
-            if not self.bt or not self.bt.iphone or self.bt.iphone.get("mac") != mac:
+            if not self.phone_still(mac, turn):
                 return
+        self.log("pbap_gave_up", aborted_for_voice=aborted)
 
 
 if __name__ == "__main__":
@@ -1574,7 +1804,8 @@ if __name__ == "__main__":
     ap.add_argument("--wifi", default="none", choices=["none", "nmcli"])
     ap.add_argument("--discovery-port", type=int, default=8158)
     ap.add_argument("--screen", default="848x304")
-    ap.add_argument("--fps", type=int, default=30)
+    ap.add_argument("--fps", type=int, default=None,
+                    help="pictures a second asked of CarPlay; not given = the choice in the settings page (15 or 30)")
     ap.add_argument("--music-fps", type=int, default=None,
                     help="video frame rate cap with CarPlay music (default 0 = none)")
     ap.add_argument("--call-fps", type=float, default=0,

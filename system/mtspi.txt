@@ -15,9 +15,14 @@ WIFI_PASSWORD=
 SSH_KEY=
 
 # Siri from the helmet: in CarPlay, hold the joystick down for one second, wait for the bike's tone in the helmet
-# (about three seconds) and speak. The dashboard shows a call while Siri listens. Write on to use it, off to switch
-# it off again.
+# (about three seconds) and speak. The dashboard shows a call while Siri listens. It is on: write off to switch it
+# off, on to have it back.
 SIRI=
+
+# The icon that takes you back from CarPlay to the Pi's own page: the name under it (12 characters at most) and
+# its picture, a PNG file copied next to this file (for example mtspi-icon.png). Without them: "MTS" on a red square.
+CARPLAY_NAME=
+CARPLAY_ICON=
 
 # The card is protected against power cuts: while the Pi works nothing is written to it, so the bike can cut
 # the power at any moment. Write off only when you want to change the system yourself (updates, experiments):

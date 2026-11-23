@@ -1,5 +1,6 @@
 #!/bin/bash
-# Applies the optional settings file on the boot partition (mtspi.txt): Wi-Fi country, home Wi-Fi, SSH key, Siri.
+# Applies the optional settings file on the boot partition (mtspi.txt): Wi-Fi country, home Wi-Fi, SSH key, Siri,
+# the name and picture of the CarPlay icon, the tyre pressure sensors.
 # (PROTECT= and LOGS= in the same file are read by system/protect.sh and system/logs.sh.)
 # Runs as root at every start (mtspi-setup.service), before the Wi-Fi mode service. Does nothing if the file
 # is missing or empty. The boot partition is the only part of the card every computer can read and write,
@@ -11,6 +12,7 @@ U=${MTSPI_USER:-mtspi}
 P2P=${MTSPI_P2P_CONF:-/etc/wpa_supplicant/mtspi-p2p.conf}
 SUDOERS=${MTSPI_SUDOERS:-/etc/sudoers.d/mtspi-remote}
 NMSTATE=${MTSPI_NM_STATE:-/var/lib/NetworkManager/NetworkManager.state}
+ICON=${MTSPI_ICON:-/var/lib/mtspi/oem_icon.png}
 log() { echo "setup file: $*"; }
 
 # put FILE KEY LINE: FILE keeps a single line for KEY (the new LINE). The file is rebuilt aside and swapped in,
@@ -44,6 +46,7 @@ boot_rw() {
 boot_back() { if [ "${BOOTWAS:-rw}" = ro ]; then sync; mount -o remount,ro "$BOOTMNT" 2>/dev/null || true; fi; }
 
 COUNTRY=""; SSID=""; PSK=""; KEY=""; SIRI=""; TPMS=""
+CP_NAME=""; CP_ICON=""; TP_FRONT=""; TP_REAR=""; TP_FRONT_BAR=""; TP_REAR_BAR=""
 if [ -f "$FILE" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
         line=${line%$'\r'}                              # files saved on Windows
@@ -59,6 +62,12 @@ if [ -f "$FILE" ]; then
             SSH_KEY) KEY=$v ;;
             SIRI) SIRI=$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]') ;;
             TPMS) TPMS=$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]') ;;
+            CARPLAY_NAME) CP_NAME=$v ;;
+            CARPLAY_ICON) CP_ICON=$v ;;
+            TPMS_FRONT) TP_FRONT=$(printf '%s' "$v" | tr '[:lower:]' '[:upper:]') ;;
+            TPMS_REAR) TP_REAR=$(printf '%s' "$v" | tr '[:lower:]' '[:upper:]') ;;
+            TPMS_FRONT_BAR) TP_FRONT_BAR=$v ;;
+            TPMS_REAR_BAR) TP_REAR_BAR=$v ;;
         esac
     done < "$FILE"
 fi
@@ -122,7 +131,7 @@ if [ -n "$KEY" ]; then
     esac
 fi
 
-# Siri from the helmet (joystick held down in CarPlay, or the bike's phone button held): SIRI=on or SIRI=off.
+# Siri from the helmet (joystick held down in CarPlay, or the bike's phone button held): on unless SIRI=off.
 # Stored as HFP_VR in the settings, which the bridge and the hands-free service read when they start: both are
 # restarted, without waiting, only when the value changes (they may already be running at this point of the boot).
 case "$SIRI" in
@@ -132,7 +141,7 @@ case "$SIRI" in
     *) VR=""; log "SIRI must be on or off, ignored: $SIRI" ;;
 esac
 CUR=$(sed -n 's/^HFP_VR=//p' "$DEF" 2>/dev/null | tail -1)
-if [ -n "$VR" ] && [ "${CUR:-0}" != "$VR" ]; then
+if [ -n "$VR" ] && [ "${CUR:-1}" != "$VR" ]; then      # no line in the settings = on (what the programs do)
     put "$DEF" 'HFP_VR=' "HFP_VR=$VR"
     systemctl --no-block try-restart mtspi-bridge.service mtspi-hfp.service >/dev/null 2>&1 || true
     log "Siri switched $SIRI"
@@ -155,4 +164,64 @@ if [ -n "$TP" ] && [ "${CUR:-0}" != "$TP" ]; then
     fi
     log "tyre pressure listener switched $TPMS"
 fi
+
+# The settings below are read by the programs when they start: each is stored only when it changes, and the programs
+# concerned are restarted once at the end, without waiting.
+AGAIN_BRIDGE=0; AGAIN_TPMS=0
+# store KEY VALUE: one line KEY=VALUE in the settings; says (returns 0) when that changed something
+store() {
+    [ "$(sed -n "s/^$1=//p" "$DEF" 2>/dev/null | tail -1)" = "$2" ] && return 1
+    put "$DEF" "$1=" "$1=$2"
+}
+
+# The icon that brings back from CarPlay to the Pi's own page: the name under it, and its picture (a PNG file on the
+# boot partition, copied next to the settings so that the program finds it also when that partition is not mounted).
+if [ -n "$CP_NAME" ]; then
+    if printf '%s' "$CP_NAME" | grep -qE '^[A-Za-z0-9 ._-]{1,12}$'; then
+        store OEM_LABEL "\"$CP_NAME\"" && { AGAIN_BRIDGE=1; log "CarPlay icon named \"$CP_NAME\""; }
+    else
+        log "CARPLAY_NAME must be 1 to 12 letters, digits or spaces, ignored: $CP_NAME"
+    fi
+fi
+if [ -n "$CP_ICON" ]; then
+    SRC="$(dirname "$FILE")/$CP_ICON"
+    case "$CP_ICON" in
+        */*|.*) log "CARPLAY_ICON must be the name of a file next to mtspi.txt, ignored: $CP_ICON" ;;
+        *)
+            if [ ! -f "$SRC" ]; then
+                log "CARPLAY_ICON: no file $CP_ICON next to mtspi.txt"
+            elif [ "$(head -c 8 "$SRC" | od -An -tx1 | tr -d ' \n')" != 89504e470d0a1a0a ] || [ "$(wc -c < "$SRC")" -gt 2097152 ]; then
+                log "CARPLAY_ICON must be a PNG picture smaller than 2 MB, ignored: $CP_ICON"
+            elif ! cmp -s "$SRC" "$ICON"; then
+                mkdir -p "$(dirname "$ICON")"
+                cp "$SRC" "$ICON.new" && chown "$U:$U" "$ICON.new" 2>/dev/null
+                mv "$ICON.new" "$ICON" && sync
+                AGAIN_BRIDGE=1
+                log "CarPlay icon picture taken from $CP_ICON"
+            fi ;;
+    esac
+fi
+
+# Tyre pressure sensors: the code printed on each sensor (the last three bytes of its address, or the whole address)
+# and the recommended pressures in bar, riding solo / fully loaded.
+for pair in "TPMS_FRONT:$TP_FRONT" "TPMS_REAR:$TP_REAR"; do
+    k=${pair%%:*}; v=${pair#*:}
+    [ -n "$v" ] || continue
+    if printf '%s' "$v" | grep -qE '^([0-9A-F]{2}:){2}[0-9A-F]{2}$|^([0-9A-F]{2}:){5}[0-9A-F]{2}$'; then
+        store "$k" "$v" && { AGAIN_TPMS=1; AGAIN_BRIDGE=1; log "$k $v"; }
+    else
+        log "$k must look like 00:51:E4 (the code on the sensor), ignored: $v"
+    fi
+done
+for pair in "TPMS_FRONT_BAR:$TP_FRONT_BAR" "TPMS_REAR_BAR:$TP_REAR_BAR"; do
+    k=${pair%%:*}; v=${pair#*:}
+    [ -n "$v" ] || continue
+    if printf '%s' "$v" | grep -qE '^[1-4]\.[0-9](/[1-4]\.[0-9])?$'; then
+        store "$k" "$v" && { AGAIN_BRIDGE=1; log "$k $v"; }
+    else
+        log "$k must be one or two pressures in bar like 2.5/2.9, ignored: $v"
+    fi
+done
+[ "$AGAIN_BRIDGE" = 0 ] || systemctl --no-block try-restart mtspi-bridge.service >/dev/null 2>&1 || true
+[ "$AGAIN_TPMS" = 0 ] || systemctl --no-block try-restart mtspi-tpms.service >/dev/null 2>&1 || true
 exit 0

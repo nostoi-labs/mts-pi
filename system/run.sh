@@ -4,6 +4,10 @@
 # Settings come from /etc/default/mtspi. Each run writes its log (JSON lines) to a new folder under $DATA, or under
 # MTSPI_LOG_DIR when that is set (a folder in memory: then set MTSPI_LOG_SYNC=0 and MTSPI_LOG_MAX_MB too).
 # For a bench without the bike: BT=emulated, CONTROL=tcp:9150, WIFI=none.
+# CARPLAY_FPS: how many pictures a second CarPlay is asked for. Not set (the normal case): the choice made in the
+# settings page on the dashboard, 15 or 30, 15 until somebody changes it. Set here: that number, and the settings
+# page has no row for it. Every picture that arrives is decoded, also the ones the dashboard never gets: asking for
+# fewer is less work for the processor, and less heat.
 set -u
 cd "$(dirname "$0")/.."
 PY=${PY:-.venv/bin/python}
@@ -33,6 +37,7 @@ exec "$PY" -m mtspi.bridge \
     --bt "${BT:-real}" --iphone none --carlinkit "${CARLINKIT:-none}" --bike-audio "${BIKE_AUDIO:-none}" \
     --vehicle-keys 128 --bt-name "${BT_NAME:-MTS Pi}" --bt-info "${BT_INFO:-[HFP,A2DP]${BT_NAME:-MTS Pi}}" \
     --settings "$DATA/settings.json" --pbap "${PBAP:-bluez}" --phonebook-cache "$DATA/phonebook.json" \
+    ${CARPLAY_FPS:+--fps "$CARPLAY_FPS"} \
     ${CALL_FPS:+--call-fps "$CALL_FPS"} \
     ${MUSIC_FPS:+--music-fps "$MUSIC_FPS"} \
     --log "$RUN/bridge.jsonl" --ap-credentials-file "$RUN/ap.jsonl" "$@"

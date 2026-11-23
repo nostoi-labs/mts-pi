@@ -56,7 +56,7 @@ status)
     echo "512-byte sectors written since power-on ($(cut -d. -f1 /proc/uptime) s ago):"
     for p in 1 2 3 4; do printf '  p%s %s\n' $p "$(awk '{print $7}' /sys/block/mmcblk0/mmcblk0p$p/stat 2>/dev/null)"; done
     [ -d /media/root-rw ] && df -h /media/root-rw 2>/dev/null | tail -1 | awk '{print "  layer in memory: " $3 " used of " $2}'
-    sed 's/^/  data partition check: /' /run/mtspi-data-check.txt 2>/dev/null || true
+    sed 's/^/  partition check at start: /' /run/mtspi-data-check.txt 2>/dev/null || true
     exit 0 ;;
 on)
     need_root

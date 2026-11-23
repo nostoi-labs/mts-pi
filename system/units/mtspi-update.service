@@ -1,0 +1,23 @@
+# Card image only. Runs when one of these is there: an update package or a rollback request on the boot partition,
+# or a step left to finish by a power cut. The programs wait for it, so that they start as the new version.
+[Unit]
+Description=MTS Pi: an update copied to the boot partition is installed (system/update.py)
+After=mtspi-protect.service mtspi-setup.service boot-firmware.mount
+Before=mtspi-bridge.service mtspi-hfp.service mtspi-tpms.service
+ConditionPathExists=/etc/cloud/cloud-init.disabled
+ConditionPathExistsGlob=|/boot/firmware/mts-pi-update*.tar.gz
+ConditionPathExistsGlob=|/boot/firmware/mts-pi-update*.tgz
+ConditionPathExistsGlob=|/boot/firmware/mts-pi-update*.tar
+ConditionPathExistsGlob=|/boot/firmware/mts-pi-rollback*
+ConditionPathExists=|@REPO@/.apply-pending
+ConditionPathExists=|@REPO@.new
+ConditionPathExists=|@REPO@.staging
+ConditionPathExistsGlob=|@REPO@.trash*
+
+[Service]
+Type=oneshot
+TimeoutStartSec=900
+ExecStart=/usr/bin/python3 @REPO@/system/update.py
+
+[Install]
+WantedBy=multi-user.target

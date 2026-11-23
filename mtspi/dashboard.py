@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw
 
 from . import i18n, ui
 from .i18n import t
-from .settings import IDLE_CHOICES, QUALITY_CHOICES, idle_label, quality_label
+from .settings import FPS_CHOICES, IDLE_CHOICES, QUALITY_CHOICES, fps_label, idle_label, quality_label
 from .ui import (BLACK, BLUE, CYAN, FILL, GREEN, ORANGE, RED, SECONDARY, TERTIARY, TEXT, WELL, font)
 
 
@@ -370,6 +370,7 @@ class Dashboard:
             ("autostart", t("s_autostart"), t("s_auto") if st.carplay_autostart else t("s_on_demand")),
             ("idle", t("s_idle"), idle_label(st.carplay_idle_off)),
             ("quality", t("s_quality"), quality_label(st.jpeg_quality)),
+        ] + ([("fps", t("s_fps"), fps_label(st.carplay_fps))] if self.b.fps_fixed() is None else []) + [
             ("back", t("s_back"), ""),           # the joystick has no Back key: a row that does it (and hold ↑ too)
         ]
 
@@ -407,6 +408,9 @@ class Dashboard:
         elif what == "quality":
             i = QUALITY_CHOICES.index(st.jpeg_quality) if st.jpeg_quality in QUALITY_CHOICES else 0
             st.jpeg_quality = QUALITY_CHOICES[(i + step) % len(QUALITY_CHOICES)]
+        elif what == "fps":
+            i = FPS_CHOICES.index(st.carplay_fps) if st.carplay_fps in FPS_CHOICES else 0
+            st.carplay_fps = FPS_CHOICES[(i + step) % len(FPS_CHOICES)]
         self.b.apply_settings()
 
     def render_settings(self, d, W, H, u):

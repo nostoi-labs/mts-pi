@@ -222,6 +222,7 @@ class BtState:
 
     async def _poll_ofono(self):
         self.cind, self.call, self.operator, self.modem = {}, None, None, None
+        self.calls_known = False     # True only when this very look got the phone's list of calls (empty or not)
         if not self.iphone:
             return
         try:
@@ -247,6 +248,7 @@ class BtState:
                 self.operator = _v(nr.get("Name"))
             if "org.ofono.VoiceCallManager" in ifaces:
                 calls = (await call(self.bus, "org.ofono", path, "org.ofono.VoiceCallManager", "GetCalls"))[0]
+                self.calls_known = True
                 if calls:
                     _, cp = calls[0]
                     st = _v(cp.get("State"))
@@ -414,8 +416,14 @@ async def route_call_audio(iphone_mac, bike_mac, log):
 PULL_FIELDS = ["VERSION", "FN", "N", "TEL", "X-IRMC-CALL-DATETIME"]
 
 
-async def pull_phonebook(mac, log, folders=("pb", "cch"), timeout=180, source=None):
-    """Downloads phonebook and recent calls from the iPhone as vCard (obexd on the session bus). Returns {folder: text}."""
+class PullAborted(Exception):
+    """The phonebook download was stopped on purpose (a voice link is opening): try again later."""
+
+
+async def pull_phonebook(mac, log, folders=("pb", "cch"), timeout=180, source=None, abort=None):
+    """Downloads phonebook and recent calls from the iPhone as vCard (obexd on the session bus). Returns {folder: text}.
+    abort: a function looked at before each folder and every 0.3 s while one comes in; when it says True the transfer
+    is cancelled, the session closed and PullAborted raised (nothing half-read is returned)."""
     if source and source.startswith("hci"):           # radio name → address (obexd Source)
         try:
             sbus = await system_bus()
@@ -433,6 +441,9 @@ async def pull_phonebook(mac, log, folders=("pb", "cch"), timeout=180, source=No
                                             # a pairing with the iPhone from there (a "ghost" iPhone on one of the Pi's radios)
                                             **({"Source": Variant("s", source)} if source else {})}]))[0]
         for folder in folders:
+            if abort and abort():
+                await _drop_session(bus, sess)
+                raise PullAborted(folder)
             await call(bus, "org.bluez.obex", sess, "org.bluez.obex.PhonebookAccess1", "Select", "ss", ["int", folder])
             # only the fields the bike needs: with photos and notes the phonebook weighed 4.4 MB and the transfer
             # was read half-way when the wait expired (418 cards out of 644, 24 Oct 2026)
@@ -450,6 +461,15 @@ async def pull_phonebook(mac, log, folders=("pb", "cch"), timeout=180, source=No
                     st = "complete"                    # a finished transfer disappears from the bus
                 if st in ("complete", "error"):
                     break
+                if abort and abort():
+                    try:
+                        await call(bus, "org.bluez.obex", tpath, "org.bluez.obex.Transfer1", "Cancel", "", [])
+                    except Exception:
+                        pass                            # already over, or obexd refuses: closing the session stops it anyway
+                    await _drop_session(bus, sess)
+                    if fname and os.path.exists(fname):
+                        os.remove(fname)
+                    raise PullAborted(folder)
                 await asyncio.sleep(0.3)
             if st != "complete":
                 log("pbap_incomplete", folder=folder, status=st)
@@ -463,6 +483,13 @@ async def pull_phonebook(mac, log, folders=("pb", "cch"), timeout=180, source=No
     finally:
         bus.disconnect()
     return out
+
+
+async def _drop_session(bus, sess):
+    try:
+        await call(bus, "org.bluez.obex", "/org/bluez/obex", "org.bluez.obex.Client1", "RemoveSession", "o", [sess])
+    except Exception:
+        pass
 
 
 def parse_vcards(text, limit=2000):

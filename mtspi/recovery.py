@@ -21,7 +21,19 @@ What happens now, from the mildest step to the last one:
   4. if nothing helps, the Bluetooth radio no longer answers, or it carries a voice link nobody opened, the Pi
      restarts: once, then not again for 15 minutes.
 Nothing here acts unless a join has failed or the kernel reports the radio: a bike that simply does not offer its
-Wi-Fi (Ducati Connect switched off) is left alone. No step is taken during a phone call, except for a dead radio."""
+Wi-Fi (Ducati Connect switched off) is left alone. No step is taken during a phone call, except for a dead radio.
+
+On the bench on 22 Nov 2026 three more faults showed up that are not an error but something that lasts too long
+(Bridge.slow_guard):
+  - Bluetooth that never switched on at the start (the radio did not answer on its serial port): no kernel line that
+    the watch knows, nothing connected, for ever. After a minute switched off, the Pi restarts.
+  - the Carlinkit gone from the USB port after the Pi was moved; unplugging it did not bring it back, a restart of the
+    Pi did. After two minutes without it the Pi restarts, once: if it is still not there, somebody took it off, and
+    nothing more is done until it has been seen again.
+  - CarPlay left on "Connecting" with the iPhone connected over Bluetooth; restarting this program brought it back.
+    After a minute and a half the session with the Carlinkit is closed and opened again; if that does not help the
+    nothing more for now (restarting the program is what worked by hand, but the same state is an ordinary one with
+    a locked phone in a pocket: not done until the fault can be told apart)."""
 import json
 import os
 import subprocess
@@ -41,6 +53,13 @@ STUCK_COUNT, STUCK_WINDOW_S = 4, 30
 # fault writes ten every five seconds (the kernel holds back the rest).
 GHOST_COUNT, GHOST_WINDOW_S = 20, 60
 GHOST_BOUNCE_EVERY_S = 60    # when the restart is not allowed: the bike's link is closed and reopened, at most this often
+# Broken frames from the radio on its serial port ("Frame reassembly failed"). One or two are nothing; the fault writes
+# hundreds in a few seconds (bench, 22 Nov 2026: a download from the phone on top of a voice link). Only noted in the
+# log: when the links really die, "link tx timeout" follows and counts as a stuck radio.
+GARBLED_COUNT, GARBLED_WINDOW_S = 30, 10
+BT_OFF_S = 60                # Bluetooth switched off this long, at the start or later: the Pi restarts
+NO_CARLINKIT_S = 120         # the Carlinkit not on the USB port this long: the Pi restarts, once
+CONNECTING_S = 90            # CarPlay "connecting" this long with the iPhone in reach: first the session, then the program
 
 
 class RadioWatch:
@@ -51,6 +70,7 @@ class RadioWatch:
         self.now = now
         self.timeouts = []
         self.ghosts = []
+        self.garbled, self.garbled_quiet = [], 0.0
 
     def feed(self, line):
         if "Bluetooth: hci" not in line:
@@ -66,6 +86,15 @@ class RadioWatch:
                 self.ghosts = []
                 return "ghost"
             return None
+        if "Frame reassembly failed" in line:
+            t = self.now()
+            if t < self.garbled_quiet:              # this burst has been said already
+                return None
+            self.garbled = [x for x in self.garbled if t - x <= GARBLED_WINDOW_S] + [t]
+            if len(self.garbled) >= GARBLED_COUNT:
+                self.garbled, self.garbled_quiet = [], t + GARBLED_WINDOW_S
+                return "garbled"
+            return None
         if "tx timeout" in line:                    # "command tx timeout", "command 0x041f tx timeout", "link tx timeout"
             t = self.now()
             self.timeouts = [x for x in self.timeouts if t - x <= STUCK_WINDOW_S] + [t]
@@ -73,6 +102,27 @@ class RadioWatch:
                 self.timeouts = []
                 return "stuck"
         return None
+
+
+class Lasting:
+    """Something that is a fault only when it goes on: feed() is told again and again whether it is the case, and
+    answers True when it has been so without a break for limit_s, and again every limit_s for as long as it lasts
+    (a step that was not allowed the first time gets another chance). times counts those answers."""
+
+    def __init__(self, limit_s, now=time.monotonic):
+        self.limit, self.now, self.since, self.times = limit_s, now, None, 0
+
+    def feed(self, on):
+        if not on:
+            self.since, self.times = None, 0
+            return False
+        t = self.now()
+        if self.since is None:
+            self.since = t
+        if t - self.since >= self.limit * (self.times + 1):
+            self.times += 1
+            return True
+        return False
 
 
 def uptime_s():
@@ -139,6 +189,50 @@ class Recovery:
             pass
         return None
 
+    def record_kept(self, mounts="/proc/mounts"):
+        """False when the record sits on the layer in memory of a protected card (its data partition did not come up):
+        whatever is written there is gone at the next start, so a restart meant to happen once would happen again."""
+        try:
+            root_in_memory = any(line.split()[1:3] == ["/", "overlay"] for line in open(mounts) if len(line.split()) > 2)
+            return not (root_in_memory and os.stat(os.path.dirname(self.record)).st_dev == os.stat("/").st_dev)
+        except OSError:
+            return True
+
+    def last_line(self):
+        try:
+            rec = json.loads(open(self.record).read().splitlines()[-1])
+            return rec if isinstance(rec, dict) else {}
+        except (OSError, ValueError, IndexError):
+            return {}
+
+    def append(self, rec):
+        """One more line in the record kept on the data partition (the last fifty are kept)."""
+        lines = []
+        if os.path.exists(self.record):
+            lines = open(self.record).read().splitlines()[-49:]
+        lines.append(json.dumps(rec))
+        tmp = self.record + ".new"
+        with open(tmp, "w") as f:
+            f.write("\n".join(lines) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, self.record)
+
+    # --- the Carlinkit gone from the USB port: one restart, not one every fifteen minutes --------------------------
+    def carlinkit_tried(self):
+        """True when the last thing in the record is a restart for a missing Carlinkit: it did not come back with
+        that, so it is not there at all (left at home, unplugged). Nothing more until it has been seen again."""
+        rec = self.last_line()
+        return rec.get("what") == "reboot" and rec.get("key") == "carlinkit"
+
+    def carlinkit_seen(self):
+        """The Carlinkit is there: a later disappearance may restart the Pi again. Writes only when it has to."""
+        if self.carlinkit_tried():
+            try:
+                self.append({"t": round(self.wall()), "what": "carlinkit_seen"})
+            except OSError as e:
+                self.log("recovery_record_failed", error=str(e))
+
     def reboot_allowed(self):
         up = self.uptime()
         if up < REBOOT_MIN_UPTIME_S:
@@ -148,28 +242,27 @@ class Recovery:
             return False, f"already restarted {self.wall() - last:.0f} s ago"
         return True, None
 
-    def reboot(self, why):
+    def reboot(self, why, key=None):
         ok, reason = self.reboot_allowed()
         if not ok:
             if self.skipped != (why, reason[:20]):
                 self.skipped = (why, reason[:20])
                 self.log("recovery_reboot_skipped", why=why, because=reason)
             return False
+        if key and not self.record_kept():          # asked before anything is written: no line for a restart not made
+            self.log("recovery_reboot_skipped", why=why, because="the record would not survive the restart")
+            return False
         # kept on the data partition: with the logs in memory nothing else would say why the Pi restarted
         try:
-            lines = []
-            if os.path.exists(self.record):
-                lines = open(self.record).read().splitlines()[-49:]
-            lines.append(json.dumps({"t": round(self.wall()), "what": "reboot", "why": why, "failures": self.streak,
-                                     "uptime_s": round(self.uptime())}))
-            tmp = self.record + ".new"
-            with open(tmp, "w") as f:
-                f.write("\n".join(lines) + "\n")
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, self.record)
+            rec = {"t": round(self.wall()), "what": "reboot", "why": why, "failures": self.streak,
+                   "uptime_s": round(self.uptime())}
+            if key:
+                rec["key"] = key
+            self.append(rec)
         except OSError as e:
             self.log("recovery_record_failed", error=str(e))
+            if key:                 # "once" cannot be remembered: better no restart than one every few minutes
+                return False
         self.log("recovery_reboot", why=why, failures=self.streak)
         r = self.run(["sudo", "-n", "/usr/bin/systemctl", "reboot"])
         if r.returncode != 0:

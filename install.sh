@@ -45,6 +45,9 @@ else
     U=mtspi
     id "$U" >/dev/null 2>&1 || useradd -m -s /bin/bash "$U"
     passwd -l "$U" >/dev/null          # service account: no password, no login
+    # the mark of a card image, and what it holds besides the program (packages, partitions): an update that needs
+    # more than this number is refused by system/update.py, and system/sysfiles.sh switches on the image's own services
+    echo 1 > /etc/mtspi-image
 fi
 UID_N=$(id -u "$U")
 UHOME=$(getent passwd "$U" | cut -d: -f6)
@@ -127,22 +130,10 @@ setv CARLINKIT "$CARLINKIT"
 if [ "$CARLINKIT" = usb ]; then setv HFP_SOURCE bridge; else $SUDO sed -i '/^HFP_SOURCE=/d' $D; fi
 [ -z "$HOME_SSID" ] || setv HOME_SSID "\"$HOME_SSID\""
 
-say "PipeWire: Bluetooth roles, calls through oFono"
-WP="$UHOME/.config/wireplumber/wireplumber.conf.d"
-mkdir -p "$WP"
-cp system/conf/51-mtspi-bluez.conf "$WP/"
-# with the Carlinkit, music and voice go through CarPlay: the Pi must not be an audio output for the iPhone
-if [ "$CARLINKIT" = usb ]; then
-    cp system/conf/52-mtspi-carlinkit.conf "$WP/"
-else
-    rm -f "$WP/52-mtspi-carlinkit.conf"
-fi
-live || chown -R "$U:$U" "$UHOME/.config"
-
-say "permissions: NetworkManager, oFono, Carlinkit on USB"
-sed "s/@USER@/$U/g" system/conf/50-mtspi-nm.rules | $SUDO tee /etc/polkit-1/rules.d/50-mtspi-nm.rules >/dev/null
-sed "s/@USER@/$U/g" system/conf/mtspi-ofono.conf | $SUDO tee /etc/dbus-1/system.d/mtspi-ofono.conf >/dev/null
-$SUDO cp system/conf/90-mtspi-bt.rules system/conf/60-mtspi-carlinkit.rules /etc/udev/rules.d/
+say "service units, PipeWire roles, permissions (NetworkManager, oFono, Carlinkit on USB), services that start with the system"
+# all of it is in system/sysfiles.sh, which an update runs too (system/update.py)
+$SUDO system/sysfiles.sh "" "$REPO" "$U"
+live && $SUDO systemctl daemon-reload
 live && $SUDO udevadm control --reload
 
 say "Wi-Fi Direct to the bike: dedicated wpa_supplicant, NetworkManager keeps away from the P2P interfaces"
@@ -152,7 +143,6 @@ if [ -n "$COUNTRY" ]; then
 else
     sed '/@COUNTRY@/d' system/conf/p2p.conf | $SUDO tee /etc/wpa_supplicant/mtspi-p2p.conf >/dev/null
 fi
-$SUDO cp system/conf/99-mtspi-p2p.conf /etc/NetworkManager/conf.d/
 live && { $SUDO systemctl reload NetworkManager || true; }
 
 say "names shown to the bike and to the iPhone"
@@ -188,13 +178,6 @@ else
     mkdir -p /var/lib/systemd/linger && touch "/var/lib/systemd/linger/$U"
     systemctl --global disable mpris-proxy.service 2>/dev/null || true
 fi
-for u in system/units/*.service system/units/*.path; do
-    sed -e "s#@REPO@#$REPO#g" -e "s#@USER@#$U#g" -e "s#@UID@#$UID_N#g" "$u" | $SUDO tee "/etc/systemd/system/$(basename "$u")" >/dev/null
-done
-live && $SUDO systemctl daemon-reload
-$SUDO systemctl disable mtspi-p2p 2>/dev/null || true    # started and stopped by mtspi-wifi-mode
-$SUDO systemctl enable ofono mtspi-setup mtspi-firstboot mtspi-adapters mtspi-hfp mtspi-wifi-mode mtspi-btcentral mtspi-bridge
-$SUDO systemctl enable mtspi-tpms 2>/dev/null || true     # experimental, runs only with TPMS=1 in the settings
 if live; then
     $SUDO rfkill unblock bluetooth   # Raspberry Pi OS leaves it blocked at first boot
     $SUDO systemctl restart bluetooth ofono
@@ -247,6 +230,17 @@ else
     else
         warn "boot file left as it is (config.txt or the cut-down firmware not found, or gpu_mem already set)"
     fi
+    # Bluetooth on the Pi's small serial port. On the usual one the radio chip stops with "hardware error 0x00" while a
+    # voice link is open: 5 times in about 340 calls and Siri openings on the bench on 22 Nov 2026, none in 785 on the
+    # small port. 921600 because the port's own default (230400) cannot carry the music; the flow control it needs at
+    # that speed is switched on by mtspi-uart-flow. The empty dtoverlay= line makes the dtparam apply to the board.
+    # The speed of that port is made from the "core" clock: core_freq_min=400 keeps it where it is. Measured on
+    # 23 Nov 2026 it already stays at 400 MHz when the processor slows down to 600; the line is there for the cases
+    # that were not tried (low supply voltage, a very hot day).
+    if [ -f "$CFG" ] && ! grep -q '^dtoverlay=miniuart-bt' "$CFG"; then
+        printf '%s\n' '' '# MTS Pi: Bluetooth on the mini UART (the radio chip stops during calls on the other port).' \
+            'dtoverlay=miniuart-bt' 'dtoverlay=' 'dtparam=krnbt_baudrate=921600' 'core_freq_min=400' >> "$CFG"
+    fi
 
     say "card protected against power cuts (card image only: it needs the data and log partitions made by image/build.sh)"
     # What each piece is for: system/protect.sh. The first start of the card is still writable; when it is over
@@ -286,7 +280,7 @@ else
     # The weekly clean-up of free space: with a read-only system the date of the last one is never saved, so it would
     # start again at EVERY power-on, within 100 minutes, keeping the data partition busy (measured: 34 s).
     systemctl disable fstrim.timer >/dev/null 2>&1 || true; systemctl mask fstrim.timer >/dev/null 2>&1 || true
-    systemctl enable mtspi-data-check mtspi-logs mtspi-btstore-load mtspi-btstore mtspi-clock-load mtspi-clock-save.path mtspi-protect
+    # (the services of the protection and mtspi-update were switched on by system/sysfiles.sh, with the others)
     # the data partition starts with a copy of what the system holds now
     if mountpoint -q /data; then
         for b in bluetooth:/var/lib/bluetooth mtspi:/var/lib/mtspi nm:/etc/NetworkManager/system-connections default:/etc/default; do

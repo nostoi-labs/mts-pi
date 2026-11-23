@@ -1,15 +1,15 @@
 [Unit]
-Description=MTS Pi: the data partition is checked (with a time limit) before it is mounted
+Description=MTS Pi: the data and boot partitions are checked (with a time limit) before they are mounted
 DefaultDependencies=no
 After=systemd-udev-settle.service dev-disk-by\x2dlabel-mtspi\x2ddata.device
 Wants=dev-disk-by\x2dlabel-mtspi\x2ddata.device
-Before=data.mount local-fs.target
-JobTimeoutSec=150
+Before=data.mount boot-firmware.mount local-fs.target
+JobTimeoutSec=200
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-TimeoutStartSec=140
+TimeoutStartSec=190
 ExecStart=@REPO@/system/data-check.sh
 
 [Install]

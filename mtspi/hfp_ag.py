@@ -48,8 +48,8 @@ INDICATORS = [("service", "(0,1)"), ("call", "(0,1)"), ("callsetup", "(0-3)"), (
 AG_FEATURES = 32 | 64 | 256
 SDP_FEATURES = 0x0000
 # HFP_VR=1: voice assistant (CarPlay Siri). Bit 2 of +BRSF and of the SDP record: the bike can send AT+BVRA=1 (long press
-# of the phone button). Off by default: advertising it may change what the bike does with that button, needs testing.
-VR_ENABLED = os.environ.get("HFP_VR", "0") == "1"
+# of the phone button). On unless HFP_VR=0 (since 23 Nov 2026; on the bike with it since 21 Nov 2026).
+VR_ENABLED = os.environ.get("HFP_VR", "1") == "1"
 if VR_ENABLED:
     AG_FEATURES |= 4
     SDP_FEATURES |= 0x0004
@@ -80,6 +80,72 @@ class _Profile(ServiceInterface):
 
 def mac_of(path):
     return path.rsplit("/", 1)[-1].replace("dev_", "").replace("_", ":")
+
+
+class SinkUnknown(Exception):
+    """The list of audio outputs could not be read just now (PipeWire restarting, pw-dump stuck): nothing is known,
+    which is not the same as "the bike's output is gone"."""
+
+
+def bike_sink(macs, dump=None):
+    """The name of the music output (A2DP) towards one of these addresses, None if there is none, SinkUnknown if the
+    list cannot be read. It runs in the music thread: a failure here must never end that thread."""
+    try:
+        out = dump() if dump else subprocess.run(["pw-dump"], capture_output=True, timeout=5).stdout
+        nodes = json.loads(out or b"[]")
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        raise SinkUnknown(f"{type(e).__name__}: {e}"[:120])
+    under = [m.replace(":", "_") for m in macs]
+    for o in nodes if isinstance(nodes, list) else []:
+        props = ((o.get("info") or {}).get("props") or {}) if isinstance(o, dict) else {}
+        name = props.get("node.name", "")
+        if name.startswith("bluez_output") and str(props.get("api.bluez5.profile", "")).startswith("a2dp") and \
+                (not under or any(m in name for m in under)):
+            return name
+    return None
+
+
+class MusicLinkWatch:
+    """Music is arriving for the bike, the bike is connected (hands-free link up), but there is no music link (A2DP)
+    to send it on. Seen on the bench on 22 Nov 2026: after the radio chip sent broken frames the music link died
+    ("avdtp Start: Connection timed out") while CarPlay and Siri went on, and nothing put it back.
+    no_sink() is called about once a second while that lasts and says what to do: nothing, "connect" (ask BlueZ to
+    connect the profiles that are missing: the gentle way) or "reconnect" (close the bike's link and open it again:
+    what brought the music back by hand). Then it waits before trying again, and gives up after a few tries."""
+    AFTER_S = 8             # at the start of a connection the music link takes a few seconds: not a fault
+    EVERY_S = 30
+    MAX_TRIES = 4
+
+    def __init__(self, now=time.monotonic):
+        self.now, self.since, self.last, self.tries = now, 0.0, 0.0, 0
+
+    def no_sink(self, bike_connected):
+        t = self.now()
+        if not bike_connected:
+            self.since = 0.0
+            return None
+        if not self.since:
+            self.since = t
+            return None
+        if t - self.since < self.AFTER_S or (self.last and t - self.last < self.EVERY_S) or self.tries >= self.MAX_TRIES:
+            return None
+        self.last, self.tries = t, self.tries + 1
+        return "connect" if self.tries == 1 else "reconnect"
+
+    def back(self):
+        """The music link is there again: True if it had needed help."""
+        return self.tries > 0
+
+
+def reconnect_music_link(mac, how):
+    """Runs in its own thread: BlueZ is asked through bluetoothctl, as a person at the keyboard would."""
+    try:
+        if how == "reconnect":
+            subprocess.run(["bluetoothctl", "disconnect", mac], capture_output=True, timeout=15)
+            time.sleep(4)
+        subprocess.run(["bluetoothctl", "connect", mac], capture_output=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 class IphoneState:
@@ -217,6 +283,7 @@ class BridgeState:
         self.voice_lock = threading.Lock()
         self.music_proc = None
         self.music_sink = None
+        self.music_lost = MusicLinkWatch()
         self.music_q = AudioQueue(self.MUSIC_QUEUE)
         self.loop = None
         self.vr = False                # voice assistant active: voice channel open without a call
@@ -267,17 +334,16 @@ class BridgeState:
             self.loop.call_soon_threadsafe(lambda: spawn(self.link.send(lp.MIC, up)))
 
     def _bike_sink(self):
-        macs = [mac_of(d).replace(":", "_") for d in self.ag.links]
-        out = subprocess.run(["pw-dump"], capture_output=True).stdout
-        for o in json.loads(out or b"[]"):
-            props = ((o.get("info") or {}).get("props") or {})
-            name = props.get("node.name", "")
-            if name.startswith("bluez_output") and str(props.get("api.bluez5.profile", "")).startswith("a2dp") and \
-                    (not macs or any(m in name for m in macs)):
-                return name
-        return None
+        # list(): the table of links belongs to the other thread, which adds and removes while this one reads.
+        # With no hands-free link at the moment (it dropped, the music link is still up) the music keeps going to
+        # the bike it was going to, not to whatever other Bluetooth output there is.
+        macs = [mac_of(d) for d in list(self.ag.links)]
+        if macs:
+            self.bike_macs = macs
+        return bike_sink(macs or getattr(self, "bike_macs", []))
 
     MUSIC_IDLE_S = 2.0      # no music for this long (pause): pw-cat is closed
+    SINK_CHECK_S = 5.0      # while music plays: how often to look whether the bike's sink still exists
 
     def _close_music(self):
         p, self.music_proc = self.music_proc, None
@@ -290,7 +356,7 @@ class BridgeState:
     def music_writer(self):
         """The "music" thread: queue → pw-cat stdin. If A2DP to the bike slows down (2.4 GHz) it blocks here, not in the
         link loop: JSON messages (ring, callsetup…) arrive immediately instead of waiting for the music (29 Oct 2026: ring +2.2 s)."""
-        dropped, last_log, no_sink, last_pcm = 0, 0.0, 0.0, 0.0
+        dropped, last_log, no_sink, last_pcm, sink_seen, unknown_log = 0, 0.0, 0.0, 0.0, 0.0, 0.0
         while True:
             pcm = self.music_q.get(1.0)
             if self.music_q.dropped != dropped and time.monotonic() - last_log > 5:
@@ -312,16 +378,46 @@ class BridgeState:
                     self.ag.log("hfp_bridge_music_idle")
                 continue
             last_pcm = time.monotonic()
+            # pw-cat goes on "playing" even when the music link to the bike has gone (it was still running with its
+            # target missing, 22 Nov 2026): every few seconds, look whether the bike's sink is still there
+            if self.music_proc is not None and last_pcm - sink_seen > self.SINK_CHECK_S:
+                sink_seen = last_pcm
+                try:
+                    if self._bike_sink() != self.music_sink:
+                        self._close_music()
+                        self.ag.log("hfp_bridge_music_sink_gone", sink=self.music_sink)
+                except SinkUnknown:
+                    pass                            # not known: the music goes on, the next look is in a few seconds
             if self.music_proc is None or self.music_proc.poll() is not None:
                 if time.monotonic() - no_sink < 1:
                     continue                        # pw-dump at most once per second
-                self.music_sink = self._bike_sink()
+                try:
+                    self.music_sink = self._bike_sink()
+                except SinkUnknown as e:
+                    # the audio system does not answer: nothing to send the music to, and no reason to touch Bluetooth
+                    no_sink = time.monotonic()
+                    if no_sink - unknown_log > 30:
+                        unknown_log = no_sink
+                        self.ag.log("hfp_bridge_music_sinks_unknown", error=str(e))
+                    continue
                 if not self.music_sink:
                     no_sink = time.monotonic()
-                    continue                        # bike not connected over A2DP: the music is lost
+                    # bike not connected over A2DP: the music is lost. If the bike IS connected (the hands-free link
+                    # is up) and this goes on, the music link has died by itself: it is put back (see MusicLinkWatch)
+                    links = list(self.ag.links)         # only the links that are up: a closed one leaves the table
+                    step = self.music_lost.no_sink(bool(links))
+                    if step:
+                        mac = mac_of(links[-1])
+                        self.ag.log("hfp_bridge_music_link_lost", how=step, tries=self.music_lost.tries)
+                        threading.Thread(target=reconnect_music_link, args=(mac, step), daemon=True).start()
+                    continue
+                if self.music_lost.back():
+                    self.ag.log("hfp_bridge_music_link_back", tries=self.music_lost.tries)
+                self.music_lost = MusicLinkWatch()
                 self.music_proc = subprocess.Popen(["pw-cat", "--playback", "--raw", "--target", self.music_sink, "--rate", "44100",
                                                     "--channels", "2", "--format", "s16", "-"],
                                                    stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                sink_seen = time.monotonic()
                 self.ag.log("hfp_bridge_music", sink=self.music_sink)
             try:
                 self.music_proc.stdin.write(pcm)
@@ -418,11 +514,11 @@ class Link:
             self.log("hfp_ag_tx", line=line[:80])
 
     async def run(self):
-        reader, self.writer = await asyncio.open_connection(sock=self.sock)
-        self.log("hfp_ag_connected", adapter=self.adapter)
-        ticker = asyncio.ensure_future(self.ticker())
-        buf = b""
+        ticker, buf = None, b""
         try:
+            reader, self.writer = await asyncio.open_connection(sock=self.sock)
+            self.log("hfp_ag_connected", adapter=self.adapter)
+            ticker = asyncio.ensure_future(self.ticker())
             while True:
                 data = await reader.read(512)
                 if not data:
@@ -437,9 +533,12 @@ class Link:
         except (ConnectionError, OSError) as e:
             self.log("hfp_ag_error", error=f"{type(e).__name__}: {e}")
         finally:
-            ticker.cancel()
+            if ticker:
+                ticker.cancel()
             self.sco_close()
-            self.writer.close()
+            if self.writer:
+                self.writer.close()
+            self.ag.forget(self)                    # whatever happened above: a link that is over leaves the table
             self.log("hfp_ag_disconnected")
 
     # -------------------------------------------------------------- commands from the bike
@@ -598,6 +697,12 @@ class HfpAg:
         self.bus = None
         self.state = None
         self.links = {}
+
+    def forget(self, link):
+        """A link that has closed leaves the table, unless the same device has already connected again. Until 23 Nov
+        2026 nothing was ever removed: "the bike is connected" stayed true for ever after the first connection."""
+        if self.links.get(link.device) is link:
+            del self.links[link.device]
 
     async def safe(self, coro):
         try:
