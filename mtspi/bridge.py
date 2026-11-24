@@ -1148,6 +1148,7 @@ class Bridge:
         if action == "restart_p2p":
             await loop.run_in_executor(None, rec.restart_p2p)
         elif action == "reboot":
+            await loop.run_in_executor(None, self.log.drain)             # the lines that say why are on the card first
             return await loop.run_in_executor(None, rec.reboot, why)     # False: not allowed now, or it failed
         elif action == "bounce":
             bike = self.bt.bike if self.bt else None
@@ -1292,6 +1293,7 @@ class Bridge:
                         self.log("carlinkit_absent", note="the Pi already restarted once for this: left alone until it is seen again")
                 else:
                     self.log("carlinkit_absent", for_s=recovery.NO_CARLINKIT_S * no_dongle.times)
+                    await loop.run_in_executor(None, self.log.drain)
                     await loop.run_in_executor(None, lambda: rec.reboot("the Carlinkit is not on the USB port", key="carlinkit"))
 
     async def connecting_guard(self):

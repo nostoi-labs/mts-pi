@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import atexit
 import json
 import os
+import queue
 import subprocess
 import sys
+import threading
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -27,6 +30,12 @@ class JsonLog:
     """One JSON line per event.
     MTSPI_LOG_SYNC=1 (default): every line is flushed to the card at once (fsync), so that the last lines survive
     when the bike cuts the power. With the log kept in memory (MTSPI_LOG_SYNC=0) that would be pointless work.
+    The flush to the card is done by a thread of its own, never by the caller: the caller is the program's main
+    loop, and while it waits for the card no picture, sound or key goes through. Bench of 24 Nov 2026 (logs on the
+    card, CarPlay live): half the flushes took 13 ms, one in ten more than 0.2 s, the slowest of 60 took 0.86 s;
+    in 8 minutes at 22 pictures a second, 8 of the 13 stops of the picture longer than a second began at the
+    status line written every 5 s. The lines reach the card in order, a moment later; drain() waits for them
+    (before a restart of the Pi, and when the program ends).
     MTSPI_LOG_MAX_MB: when the file grows past this size it is renamed to <name>.1 (the previous .1 is dropped)
     and a new one is started: a log kept in memory cannot be allowed to grow without limit. 0 = no limit.
     A log that cannot be written (card full or read-only) never stops the program: the file is given up, the
@@ -43,6 +52,8 @@ class JsonLog:
             self.max_bytes = 0
         self.size = 0
         self.f = None
+        self._lines = None              # lines waiting for the writer thread (only with sync)
+        self._writer = None
         if path:
             try:
                 self.f = open(path, "a", buffering=1)
@@ -54,22 +65,60 @@ class JsonLog:
         rec = {"t": round(time.time(), 3), "s": round(time.monotonic() - self.t0, 3), "side": "pi", "event": event, **fields}
         line = json.dumps(rec, ensure_ascii=False, default=str)
         if self.f:
-            try:
-                self.f.write(line + "\n")
-                self.f.flush()
-                if self.sync:
-                    os.fsync(self.f.fileno())
-                self.size += len(line) + 1
-                if self.max_bytes and self.size > self.max_bytes:
-                    self.f.close()
-                    os.replace(self.path, self.path + ".1")
-                    self.f = open(self.path, "a", buffering=1)
-                    self.size = 0
-            except (OSError, ValueError) as e:
-                self.f = None
-                print(json.dumps({"event": "log_file_given_up", "error": str(e)}), flush=True)
+            if self.sync:
+                self._hand_over(line)
+            else:
+                self._write([line])
         if not self.quiet:
             print(line, flush=True)
+
+    def drain(self, timeout: float = 3.0) -> bool:
+        """Waits until the lines written so far are on the card. False if they were not within the time given."""
+        if self._writer is None or not self._writer.is_alive():
+            return True
+        reached = threading.Event()
+        self._lines.put(reached)
+        return reached.wait(timeout)
+
+    def _hand_over(self, line: str) -> None:
+        if self._writer is None:
+            self._lines = queue.SimpleQueue()
+            self._writer = threading.Thread(target=self._write_loop, name="log-writer", daemon=True)
+            self._writer.start()
+            atexit.register(self.drain)
+        self._lines.put(line)
+
+    def _write_loop(self) -> None:
+        while True:
+            batch = [self._lines.get()]
+            try:
+                while True:              # whatever arrived during the last flush goes to the card in one go
+                    batch.append(self._lines.get_nowait())
+            except queue.Empty:
+                pass
+            lines = [x for x in batch if isinstance(x, str)]
+            if lines and self.f:
+                self._write(lines)
+            for x in batch:
+                if not isinstance(x, str):
+                    x.set()              # a drain() waiting for the lines before it
+
+    def _write(self, lines) -> None:
+        text = "".join(line + "\n" for line in lines)
+        try:
+            self.f.write(text)
+            self.f.flush()
+            if self.sync:
+                os.fsync(self.f.fileno())
+            self.size += len(text)
+            if self.max_bytes and self.size > self.max_bytes:
+                self.f.close()
+                os.replace(self.path, self.path + ".1")
+                self.f = open(self.path, "a", buffering=1)
+                self.size = 0
+        except (OSError, ValueError) as e:
+            self.f = None
+            print(json.dumps({"event": "log_file_given_up", "error": str(e)}), flush=True)
 
 
 def save_credentials(path: str, creds: dict, log) -> None:
