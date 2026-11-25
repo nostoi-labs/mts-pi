@@ -81,7 +81,7 @@ S = {
     "s_never": ("never", "mai"), "s_after": ("after {v}", "dopo {v}"),
     "s_quality": ("Image quality", "Qualità immagine"),
     "s_fps": ("CarPlay smoothness", "Fluidità di CarPlay"),
-    "s_fps_n": ("{v} fps (cooler)", "{v} fps (scalda meno)"), "s_fps_max": ("maximum ({v} fps)", "massima ({v} fps)"),
+    "s_fps_n": ("{v} fps (cooler)", "{v} fps (scalda meno)"), "s_fps_plain": ("{v} fps", "{v} fps"), "s_fps_max": ("maximum ({v} fps)", "massima ({v} fps)"),
     "s_q_high": ("high", "alta"), "s_q_med": ("medium", "media"), "s_q_low": ("low (more fps)", "bassa (più fps)"),
 }
 

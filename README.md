@@ -282,7 +282,7 @@ disconnecting the iPhone in the bike's Bluetooth menu brings it back.
 ![Settings](docs/settings-screen.png)
 
 The settings page, on the dashboard: language (English or Italian), CarPlay at start-up, turning CarPlay off when
-you leave Ducati Connect, picture quality (high, or low for slightly more frames), and CarPlay smoothness: 15 pictures a second, which keeps the Pi cooler and is as many as the bike has ever asked for, or the maximum, 30 (CarPlay restarts when you change it and leave the page; the music stops for about ten seconds). To leave the page, use its last row or hold the joystick up: in the Pi's own pages that is Back, as
+you leave Ducati Connect, picture quality (high, or low for slightly more frames), and CarPlay smoothness: 19 pictures a second as it comes, 15 to keep the Pi cooler, or the maximum, 30. The phone delivers fewer than it is asked for, about 16 when asked for 19, and the bike has never taken more than 15 (CarPlay restarts when you change it and leave the page; the music stops for about ten seconds). To leave the page, use its last row or hold the joystick up: in the Pi's own pages that is Back, as
 it is in CarPlay.
 
 ## What works
@@ -327,6 +327,9 @@ for the screen link, Wi-Fi on 2.4 GHz as on the bike.
 | Each CarPlay frame sent to the dashboard once (the program was sending about 22 pictures a second for 15 frames), Apple Maps and music, three-minute windows one after the other | pictures sent from 22–23 a second to 14–15; the program's work from 79–89% of one processor to 59–69%; data over the radio down by a sixth to a half | bench, 23 Nov 2026 |
 | Half an hour of CarPlay with Apple Maps following a route and no music, at 15 pictures a second and then at 30, with that fix; room at 21 °C | at 15: 14 pictures a second sent, 57% of one processor, 53 °C on average (55 at most); at 30: 18 a second (the phone produced no more), 72%, 55 °C (57 at most) | bench, 23 Nov 2026 |
 | Changing between 15 and 30 pictures a second from the settings | CarPlay back 4.2–4.4 s after it is opened again, about 9 s without it in all | bench, 23 Nov 2026 |
+| CarPlay asked for 15, 19 and 30 pictures a second: a satellite map following a route, with navigation and music; room at 21 °C | pictures that really arrive: 11, 16 and 20 a second; the program's work 69%, 80% and 160% of one processor; the Pi at 56, 58.5 and 60 °C, where it starts slowing itself down | bench, 24 Nov 2026 |
+| Two and a half hours of CarPlay at 19 pictures a second, the same map and music, inside four hours of the same program running | 15 pictures a second sent, 81% of one processor, 59.5 °C on average (60.1 at most); the program's memory 128 MB at the start and 124 at the end | bench, 25 Nov 2026 |
+| The program restarts while CarPlay is connected | CarPlay back on the dashboard by itself in 20–23 s (the session is closed and opened again), 5 times out of 5 | bench, 25 Nov 2026 |
 | Power from the USB socket in the tank compartment (1 A at most) | no under-voltage through engine start and a ride; current on the bike not measured | bike, 16 Nov 2026 |
 | Temperature in the tank compartment (the one without the fan), 15 °C outside | 27–41 °C | bike, 16 Nov 2026 |
 | CarPlay with a moving map and music | 20–22 frames per second at high quality | bench, 10 Nov 2026 |

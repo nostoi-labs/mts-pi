@@ -54,6 +54,11 @@ SIRI_ENABLED = os.environ.get("HFP_VR", "1") == "1"
 # (21 Nov 2026) Siri was started at once and it worked, because the bike plays a tone in the helmet when it has
 # connected it, and that is when the rider speaks. The wait has been tried on the bench only.
 SIRI_WAIT_MIC = os.environ.get("SIRI_WAIT_MIC", "0") == "1"
+# CarPlay pictures that cannot be read, this many in a row: the session is closed and opened again. A session picked up
+# half way gave 30 and 54 of them and not one good picture (24-25 Nov 2026); a single broken picture is just dropped.
+UNREADABLE_FRAMES = 25
+FRESH_SESSION_EVERY_S = 60        # carplay_fresh_session: not more often than this
+FRESH_SESSION_WAIT_OPEN_S = 10    # how long it waits for the Carlinkit's answer to the Open sent at the start
 
 
 def oem_icon_png(label: str, path: str = "") -> bytes:
@@ -226,6 +231,9 @@ class Bridge:
         self.cind = {}
         self.carplay_wanted = False
         self.carplay_since = None
+        self._fresh_busy, self._fresh_at = False, -1e9     # carplay_fresh_session: running now, last time it ran
+        self._dongle_opened = None                         # set when the Carlinkit answers an Open (while someone waits)
+        self._bad_frames = 0                               # CarPlay pictures in a row that could not be read
         self.audio_src = {"bt": 0.0, "carplay": 0.0}
         self._cp_types, self._cp_mix = {}, bytearray()     # active CarPlay audio streams (mix_carplay)
         self.bench_route = None
@@ -351,6 +359,52 @@ class Bridge:
                 self.log("carplay_fps", fps=fps, step="session opened again")
         except (ConnectionError, OSError) as e:
             self.log("carplay_fps", fps=fps, step="failed", error=str(e)[:80])
+
+    def fresh_session(self, why):
+        """Starts carplay_fresh_session, unless one is going on or ran less than a minute ago (FRESH_SESSION_EVERY_S).
+        True if it started. From this moment the pictures that arrive are dropped: the flag is set here, not when
+        the task gets to run, or the pictures in between would still be read."""
+        if self._fresh_busy or not self.dongle or time.monotonic() - self._fresh_at <= FRESH_SESSION_EVERY_S:
+            return False
+        self._fresh_busy, self._fresh_at, self._bad_frames = True, time.monotonic(), 0
+        self.spawn(self.carplay_fresh_session(why))
+        return True
+
+    async def carplay_fresh_session(self, why):
+        """The CarPlay session cannot be used as it is: it is closed, left alone for five seconds and opened again,
+        the sequence that brought the phone back every time (carplay_new_fps). Two cases: "resumed", the program
+        started with the Carlinkit already in a session (see _from_dongle); "unreadable", many pictures in a row that
+        could not be read. The dashboard goes back to CarPlay by itself if it was there, or was on its way there.
+        Started only through fresh_session."""
+        d = self.dongle
+        back = self.carplay_wanted or self.display.mode == "carplay"
+        try:
+            if why == "resumed":
+                # The Open sent at the start is still being worked on by the Carlinkit (its answer came after about
+                # six seconds, 25 Nov 2026): the closing waits for that answer, so that the two do not cross.
+                self._dongle_opened = asyncio.Event()
+                try:
+                    await asyncio.wait_for(self._dongle_opened.wait(), FRESH_SESSION_WAIT_OPEN_S)
+                except asyncio.TimeoutError:
+                    pass
+                await asyncio.sleep(1)
+            if d is None or self.dongle is not d:
+                return
+            self.log("carplay_fresh_session", why=why, step="closing")
+            await d.stop()
+            self.decoder = None
+            self.display.carplay_frame = None
+            await asyncio.sleep(5)
+            if self.dongle is d and d.state == "closed" and not self.carplay_user_off:
+                self.carplay_wanted = back
+                self.carplay_since = time.monotonic()
+                d.state = "opening"
+                await d.start()
+                self.log("carplay_fresh_session", why=why, step="session opened again")
+        except (ConnectionError, OSError) as e:
+            self.log("carplay_fresh_session", why=why, step="failed", error=str(e)[:80])
+        finally:
+            self._fresh_busy, self._dongle_opened = False, None
 
     # ------------------------------------------------------------ CarPlay on demand
     def request_carplay(self):
@@ -478,15 +532,23 @@ class Bridge:
             self.log("dongle_message_error", mtype=mtype, error=f"{type(e).__name__}: {e}"[:200])
 
     async def _from_dongle(self, mtype, data):
-        if mtype in (ck.VIDEO_DATA, ck.AUDIO_DATA) and self.dongle and self.dongle.state == "opening":
-            # bridge restarted with the dongle already in session (no USB reset): no "Plugged", but CarPlay is already up.
-            # Request a full frame, otherwise the decoder waits for the next screen change
-            self.dongle.state = "connected"
-            self._burst_until, self._aclk = time.monotonic() + 3, 0.0
-            self.log("carlinkit_session_resumed")
-            self.spawn(self.dongle.send(ck.send_command("frame")))
+        if mtype in (ck.VIDEO_DATA, ck.AUDIO_DATA) and self.dongle and self.dongle.state == "opening" and not self._fresh_busy:
+            # The program restarted with the Carlinkit already in a session (no USB reset): no "Plugged" will come, and
+            # the Open sent at the start has landed on a live session. On 24-25 Nov 2026, twice out of twice, no
+            # picture of such a session could be read (the full picture asked for never came), and once the Carlinkit
+            # had answered the Open no picture came at all, with CarPlay looking "on" and the dashboard left on the
+            # home screen. So the session is not carried on: it is closed and opened again (carplay_fresh_session).
+            if self.fresh_session("resumed"):
+                self.log("carlinkit_session_resumed", step="closed, a new one is opened")
+            else:                                    # again within a minute: taken as it is, with a full picture asked for
+                self.dongle.state = "connected"
+                self._burst_until, self._aclk = time.monotonic() + 3, 0.0
+                self.log("carlinkit_session_resumed", step="kept")
+                self.spawn(self.dongle.send(ck.send_command("frame")))
         if mtype == ck.VIDEO_DATA:
             self.counts["cp_video"] += 1
+            if self._fresh_busy:
+                return                               # pictures of the session being closed: not read, not shown
             w, h, flags, length, _ = struct.unpack("<5I", data[:20])
             if self.decoder is None:
                 self.decoder = av.CodecContext.create("h264", "r")
@@ -502,7 +564,11 @@ class Bridge:
                 self.log("carplay_decode_error", error=str(e)[:120])
                 self.decoder = None
                 frames = []
+                self._bad_frames += 1
+                if self._bad_frames >= UNREADABLE_FRAMES:
+                    self.fresh_session("unreadable")
             for fr in frames:
+                self._bad_frames = 0
                 self.display.carplay_frame = fr
                 self.display.carplay_seq += 1
                 if self.session is not None and self.display.mode == "carplay":
@@ -631,6 +697,8 @@ class Bridge:
             key = {ck.SOFTWARE_VERSION: "software", ck.BT_DEVICE_NAME: "bt_name", ck.WIFI_DEVICE_NAME: "wifi_name"}.get(mtype)
             if key:
                 self.dongle_info[key] = data.decode("utf-8", "replace").strip("\x00")
+            if mtype == ck.OPEN and self._dongle_opened is not None:
+                self._dongle_opened.set()
             self.log("carlinkit_info", type=hex(mtype), data=data[:120].decode("utf-8", "replace") if mtype != ck.OPEN else "Opened")
 
     def mix_carplay(self, pcm, audio_type):
@@ -1148,7 +1216,7 @@ class Bridge:
         if action == "restart_p2p":
             await loop.run_in_executor(None, rec.restart_p2p)
         elif action == "reboot":
-            await loop.run_in_executor(None, self.log.drain)             # the lines that say why are on the card first
+            await loop.run_in_executor(None, getattr(self.log, "drain", bool))             # the lines that say why are on the card first
             return await loop.run_in_executor(None, rec.reboot, why)     # False: not allowed now, or it failed
         elif action == "bounce":
             bike = self.bt.bike if self.bt else None
@@ -1293,7 +1361,7 @@ class Bridge:
                         self.log("carlinkit_absent", note="the Pi already restarted once for this: left alone until it is seen again")
                 else:
                     self.log("carlinkit_absent", for_s=recovery.NO_CARLINKIT_S * no_dongle.times)
-                    await loop.run_in_executor(None, self.log.drain)
+                    await loop.run_in_executor(None, getattr(self.log, "drain", bool))
                     await loop.run_in_executor(None, lambda: rec.reboot("the Carlinkit is not on the USB port", key="carlinkit"))
 
     async def connecting_guard(self):
@@ -1817,7 +1885,7 @@ if __name__ == "__main__":
     ap.add_argument("--discovery-port", type=int, default=8158)
     ap.add_argument("--screen", default="848x304")
     ap.add_argument("--fps", type=int, default=None,
-                    help="pictures a second asked of CarPlay; not given = the choice in the settings page (15 or 30)")
+                    help="pictures a second asked of CarPlay; not given = the choice in the settings page (15, 19 or 30)")
     ap.add_argument("--music-fps", type=int, default=None,
                     help="video frame rate cap with CarPlay music (default 0 = none)")
     ap.add_argument("--call-fps", type=float, default=0,

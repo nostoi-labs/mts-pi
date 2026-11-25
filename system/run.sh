@@ -5,7 +5,7 @@
 # MTSPI_LOG_DIR when that is set (a folder in memory: then set MTSPI_LOG_SYNC=0 and MTSPI_LOG_MAX_MB too).
 # For a bench without the bike: BT=emulated, CONTROL=tcp:9150, WIFI=none.
 # CARPLAY_FPS: how many pictures a second CarPlay is asked for. Not set (the normal case): the choice made in the
-# settings page on the dashboard, 15 or 30, 15 until somebody changes it. Set here: that number, and the settings
+# settings page on the dashboard, 15, 19 or 30, 19 until somebody changes it. Set here: that number, and the settings
 # page has no row for it. Every picture that arrives is decoded, also the ones the dashboard never gets: asking for
 # fewer is less work for the processor, and less heat.
 set -u

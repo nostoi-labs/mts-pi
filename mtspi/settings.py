@@ -9,10 +9,14 @@ from . import i18n
 
 IDLE_CHOICES = [30, 60, 120, 0]          # seconds; 0 = never
 QUALITY_CHOICES = [80, 55]               # JPEG: high, low (10 Nov 2026, standard variant at 2.4 GHz, moving map: q80 22 fps, q55 24; CarPlay ~18)
-FPS_CHOICES = [15, 30]                   # pictures a second asked of CarPlay; 30 is the most the Carlinkit gives
-# 15 by default since 23 Nov 2026: the bike has never asked for more than 15, and every picture CarPlay sends is
-# decoded whether the dashboard takes it or not. Bench, moving map and music: the bridge's work went from 141% of one
-# processor to 96%. 30 is kept as a choice, to compare the two on the bike.
+FPS_CHOICES = [15, 19, 30]               # pictures a second asked of CarPlay; 30 is the most the Carlinkit gives
+FPS_DEFAULT = 19
+# The phone delivers fewer pictures than it is asked for, and every one it sends is decoded whether the dashboard
+# takes it or not. Bench, 24-25 Nov 2026, a satellite map following a route with music: asked for 15 it gave 11 a
+# second (jerky to the eye), for 19 it gave 16, for 30 it gave 20; the bridge's work was 69%, 80% and 160% of one
+# processor, the Pi at 56, 58.5 and over 60 C, where it starts slowing itself down (from 20 asked upwards). The bike
+# has never taken more than 15. So 19 by default since 25 Nov 2026 (it was 15 from 23 Nov, 30 before); 15 is kept for
+# a hot day, 30 to compare.
 # There was a "maximum" (q90, 20 fps) until 22 Nov 2026: twice the data to the dashboard and about 5 °C more, for a
 # picture that looks the same on the bike. Removed; a card that had it saved goes back to high.
 
@@ -23,7 +27,7 @@ class Settings:
     carplay_autostart: bool = True
     carplay_idle_off: int = 0            # 0 = never: without CarPlay (Carlinkit config) no audio reaches the bike
     jpeg_quality: int = 80
-    carplay_fps: int = 15
+    carplay_fps: int = FPS_DEFAULT
 
     @classmethod
     def load(cls, path: str) -> "Settings":
@@ -39,7 +43,7 @@ class Settings:
         if s.jpeg_quality not in QUALITY_CHOICES:
             s.jpeg_quality = QUALITY_CHOICES[0]
         if s.carplay_fps not in FPS_CHOICES:
-            s.carplay_fps = FPS_CHOICES[0]
+            s.carplay_fps = FPS_DEFAULT
         i18n.set_lang(s.lang)
         return s
 
@@ -64,4 +68,6 @@ def quality_label(v: int) -> str:
 
 
 def fps_label(v: int) -> str:
-    return i18n.t("s_fps_max", v=v) if v == max(FPS_CHOICES) else i18n.t("s_fps_n", v=v)
+    if v == max(FPS_CHOICES):
+        return i18n.t("s_fps_max", v=v)
+    return i18n.t("s_fps_n" if v == min(FPS_CHOICES) else "s_fps_plain", v=v)

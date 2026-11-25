@@ -162,19 +162,20 @@ def test_picture_quality_has_no_maximum():
     assert [settings.quality_label(v) for v in settings.QUALITY_CHOICES] == ["high", "low (more fps)"]
 
 
-def test_pictures_a_second_is_15_and_can_be_set_to_the_maximum():
-    """23 Nov 2026: CarPlay is asked for 15 pictures a second (the bike never asked for more, and the bridge works a
-    third less); the settings page has a row to go to 30 and back. A number fixed in /etc/default/mtspi takes the row
-    away."""
-    assert settings.FPS_CHOICES == [15, 30] and settings.Settings().carplay_fps == 15
+def test_pictures_a_second_is_19_and_can_be_set_lower_or_to_the_maximum():
+    """25 Nov 2026: CarPlay is asked for 19 pictures a second (the phone then gives about 16; asked for 15 it gave 11,
+    jerky to the eye); the settings page has a row to go to 30, to 15 and back. A choice saved before stays as it is.
+    A number fixed in /etc/default/mtspi takes the row away."""
+    assert settings.FPS_CHOICES == [15, 19, 30] and settings.Settings().carplay_fps == 19
     with tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, "settings.json")
         json.dump({"lang": "en"}, open(path, "w"))                    # a card written before the row existed
-        assert settings.Settings.load(path).carplay_fps == 15
-        json.dump({"carplay_fps": 30, "lang": "en"}, open(path, "w"))
-        assert settings.Settings.load(path).carplay_fps == 30
+        assert settings.Settings.load(path).carplay_fps == 19
+        for kept in (15, 30):
+            json.dump({"carplay_fps": kept, "lang": "en"}, open(path, "w"))
+            assert settings.Settings.load(path).carplay_fps == kept
         json.dump({"carplay_fps": 7, "lang": "en"}, open(path, "w"))
-        assert settings.Settings.load(path).carplay_fps == 15
+        assert settings.Settings.load(path).carplay_fps == 19
     b, d, saved = pages()
     b.launcher.page = "settings"
     names = [r[0] for r in b.launcher.settings_rows()]
@@ -184,9 +185,9 @@ def test_pictures_a_second_is_15_and_can_be_set_to_the_maximum():
     for key in ("OK", "RIGHT", "LEFT"):
         d.on_key(key, "CLICK")
         seen.append(b.settings.carplay_fps)
-    assert seen == [30, 15, 30]
+    assert seen == [30, 15, 30]                           # from 19: on to 30, round to 15, back to 30
     i18n.set_lang("en")
-    assert [settings.fps_label(v) for v in settings.FPS_CHOICES] == ["15 fps (cooler)", "maximum (30 fps)"]
+    assert [settings.fps_label(v) for v in settings.FPS_CHOICES] == ["15 fps (cooler)", "19 fps", "maximum (30 fps)"]
     b, d, saved = pages(fps=30)
     assert "fps" not in [r[0] for r in b.launcher.settings_rows()]
 
