@@ -37,6 +37,7 @@ def make(state="opening", display="launcher", wanted=True):
         display=types.SimpleNamespace(mode=display, carplay_frame=None, carplay_seq=0),
         carplay_wanted=wanted, carplay_user_off=False, carplay_since=None, dongle_info={},
         _fresh_busy=False, _fresh_at=-1e9, _dongle_opened=None, _bad_frames=0, _burst_until=0, _aclk=0.0,
+        _cp_gaps=bridge._Gaps(),
         log=lambda event, **kw: log.append((event, kw)), tasks=[])
     me.spawn = lambda coro: me.tasks.append(asyncio.ensure_future(coro)) or me.tasks[-1]
     me.carplay_fresh_session = lambda why: bridge.Bridge.carplay_fresh_session(me, why)

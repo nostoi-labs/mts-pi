@@ -57,6 +57,34 @@ SIRI_WAIT_MIC = os.environ.get("SIRI_WAIT_MIC", "0") == "1"
 # CarPlay pictures that cannot be read, this many in a row: the session is closed and opened again. A session picked up
 # half way gave 30 and 54 of them and not one good picture (24-25 Nov 2026); a single broken picture is just dropped.
 UNREADABLE_FRAMES = 25
+VIDEO_PAUSE_S = 0.25              # a longer wait between two pictures is counted as a pause (bridge_stats)
+
+
+class _Gaps:
+    """For the log line written every five seconds: the longest wait between two pictures, and how many waits were
+    longer than VIDEO_PAUSE_S, since the last take(). Before 26 Nov 2026 the log only had the number of pictures
+    in each five seconds, where a stop of 0.3 s cannot be seen: the short stops of the bench nights were counted
+    with probes loaded by hand. A stream silent for a whole period starts again from nothing (stopping is not a
+    pause: such periods already show as zero pictures)."""
+
+    def __init__(self):
+        self.last, self.longest, self.pauses, self.n = None, 0.0, 0, 0
+
+    def mark(self, now=None):
+        now = time.monotonic() if now is None else now
+        if self.last is not None:
+            gap = now - self.last
+            self.longest = max(self.longest, gap)
+            self.pauses += gap > VIDEO_PAUSE_S
+        self.last, self.n = now, self.n + 1
+
+    def take(self):
+        """(longest wait in ms, pauses) for the pictures seen since the last call; None if there were none."""
+        out = (round(self.longest * 1000), self.pauses) if self.n else None
+        if not self.n:
+            self.last = None
+        self.longest, self.pauses, self.n = 0.0, 0, 0
+        return out
 FRESH_SESSION_EVERY_S = 60        # carplay_fresh_session: not more often than this
 FRESH_SESSION_WAIT_OPEN_S = 10    # how long it waits for the Carlinkit's answer to the Open sent at the start
 
@@ -104,6 +132,7 @@ class Display:
         self.held = None               # UP or DOWN pressed and not yet released (see on_key)
         self.carplay_seq = 0
         self.frames_sent = 0
+        self.gaps = _Gaps()            # between the pictures sent to the bike
         self.key_count = 0
 
     @property
@@ -177,6 +206,7 @@ class Display:
 
     def on_frame_sent(self, size):
         self.frames_sent += 1
+        self.gaps.mark()
 
 
 class _Present:
@@ -254,6 +284,7 @@ class Bridge:
         self._sms_event = asyncio.Event()   # "new message" from the iPhone (MNS): the inbox is re-read
         self.fast_bt_poll = False      # during a CarPlay ring the iPhone is polled more often (number)
         self.counts = {"cp_video": 0, "cp_audio": 0, "bt_music": 0, "bt_voice": 0, "bike_mic": 0}
+        self._cp_gaps = _Gaps()        # between the pictures arriving from CarPlay
         self.decoder = None
         self._dec_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="h264")
         self.t_start = time.monotonic()
@@ -547,6 +578,7 @@ class Bridge:
                 self.spawn(self.dongle.send(ck.send_command("frame")))
         if mtype == ck.VIDEO_DATA:
             self.counts["cp_video"] += 1
+            self._cp_gaps.mark()
             if self._fresh_busy:
                 return                               # pictures of the session being closed: not read, not shown
             w, h, flags, length, _ = struct.unpack("<5I", data[:20])
@@ -1560,7 +1592,19 @@ class Bridge:
                 if sess and getattr(sess, "frames_sent", 0) else {}
             self.log("bridge_stats", display=self.display.mode, carplay=self.carplay_state(),
                      audio_source=self.audio_source(), frames_sent=self.display.frames_sent, **jpeg, **self.counts,
-                     **cpu_temp())
+                     **self.video_gaps(), **cpu_temp())
+
+    def video_gaps(self):
+        """The short stops of the picture in the last five seconds, for bridge_stats: cp_* between the pictures
+        arriving from CarPlay, tx_* between the ones sent to the bike (only while CarPlay is on the dashboard: the
+        Pi's own pages are sent when they change, and waits there mean nothing)."""
+        out = {}
+        cp, tx = self._cp_gaps.take(), self.display.gaps.take()
+        if cp:
+            out.update(cp_gap_ms=cp[0], cp_pauses=cp[1])
+        if tx and self.display.mode == "carplay":
+            out.update(tx_gap_ms=tx[0], tx_pauses=tx[1])
+        return out
 
     async def main(self):
         # "none" = peripheral absent (garage: no emulated iPhone or Carlinkit, dashboard only)
